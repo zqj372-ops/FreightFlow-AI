@@ -66,7 +66,9 @@
 - 状态:已完成最小可替换文档流服务层与 API 占位。
 - 状态:已新增邮件识别队列第一版,支持中文/英文/中英混合邮件规则识别,包括 SO 回传、订舱回复、补料确认、催单回复、异常和未知。
 - 状态:已新增邮件消息/识别结果 Prisma 模型与 API: `POST /api/email-sync/run`, `GET /api/email-recognitions`。
-- 重要边界:当前邮件识别只入队并展示待确认项,不会自动写回 Shipment 状态;确认写回留到下一阶段。
+- 状态:已新增人工审核写回闭环:`POST /api/email-recognitions/[id]/review` 支持 `confirm / ignore / mark_exception`。
+- 状态:工作台邮件识别队列已提供“确认写入 / 标记异常 / 忽略”按钮;只有操作员确认后才写回 Shipment,忽略不会写回。
+- 重要边界:系统仍不会自动写回 Shipment 状态;所有 SO 回传、补料确认、异常邮件都必须人工点击后落库。
 - 已新增 `src/lib/services/documents/document-service.ts`,包含 SO 识别占位接口与补料模板生成占位接口。
 - 已新增 `POST /api/shipments/[shipmentId]/documents/so-recognition`,接收 `fileName / mimeType / sourceText`,返回占位识别结果、置信度和待替换 OCR 提醒。
 - 已新增 `POST /api/shipments/[shipmentId]/documents/supplement-template`,接收 `templateType / language / shipment`,返回 JSON 模板字段清单,为后续 Word / Excel 生成器预留数据结构。

@@ -53,10 +53,12 @@ import {
   loadShipmentsFromApi,
   persistContact,
   persistShipmentAction,
+  reviewEmailRecognitionFromApi,
   saveEmailSettings,
   saveOpenClawSettings,
   sendBookingEmail,
   runEmailSyncFromApi,
+  type EmailRecognitionReviewAction,
   type EmailRecognitionQueueItem,
   type EmailConnectionTest,
   type PublicEmailConfig,
@@ -112,6 +114,7 @@ export function FreightflowWorkbenchPage() {
   const [selectedBookingPlanIds, setSelectedBookingPlanIds] = useState<Set<string>>(() => new Set());
   const [bookingDraftGenerating, setBookingDraftGenerating] = useState(false);
   const [emailSyncing, setEmailSyncing] = useState(false);
+  const [reviewingEmailRecognitionId, setReviewingEmailRecognitionId] = useState<string | null>(null);
   const [contactDraft, setContactDraft] = useState<ContactDraft>({
     email: "",
     label: "",
@@ -671,6 +674,24 @@ export function FreightflowWorkbenchPage() {
     }
   }
 
+  async function handleReviewEmailRecognition(id: string, action: EmailRecognitionReviewAction) {
+    if (reviewingEmailRecognitionId) return;
+
+    setReviewingEmailRecognitionId(id);
+    try {
+      const result = await reviewEmailRecognitionFromApi({ action, id, reviewer: "操作员" });
+      setToast({ tone: "success", message: result.data.summary });
+      await Promise.all([refreshEmailRecognitions(), refreshWorkbenchData()]);
+    } catch (error) {
+      setToast({
+        tone: "info",
+        message: error instanceof Error ? error.message : "邮件识别审核失败",
+      });
+    } finally {
+      setReviewingEmailRecognitionId(null);
+    }
+  }
+
   function handleResetQueueFilters() {
     setSearchTerm("");
     setOwnerFilter("all");
@@ -1025,7 +1046,9 @@ export function FreightflowWorkbenchPage() {
 
                   <EmailRecognitionPanel
                     items={emailRecognitions}
+                    onReview={(id, action) => void handleReviewEmailRecognition(id, action)}
                     onSync={() => void handleRunEmailSync()}
+                    reviewingId={reviewingEmailRecognitionId}
                     syncing={emailSyncing}
                   />
 

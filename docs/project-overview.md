@@ -114,10 +114,11 @@ freightflow-ai/
 - Shipment 主模型样例数据(6 条)
 - 订舱 modal(收件人/抄送/主题/正文/通讯录/检查项)
 - 待发订舱计划面板(资料完整度、可生成草稿、批量生成中文订舱草稿)
-- 邮件识别队列面板(手动同步邮箱、展示待确认识别结果、异常/匹配统计;当前不自动写回 Shipment)
+- 邮件识别队列面板(手动同步邮箱、展示待确认识别结果、异常/匹配统计、人工确认后写回 Shipment)
 - AI 副驾(快捷 prompt / 自定义 / 状态徽标 / 段落列表渲染)
 - `/api/booking-plans` / `/api/booking-plans/batch-drafts` / `/api/email-drafts/[draftId]` / `/api/email-drafts/[draftId]/send` 订舱计划与草稿 API
 - `/api/email-sync/run` / `/api/email-recognitions` 邮件同步与识别队列 API
+- `/api/email-recognitions/[id]/review` 邮件识别人工审核 API,支持确认写入、标记异常、忽略
 - `/api/ai/openclaw`(stub 模式 + 转发模式)
 - 一轮结构整理(workbench 页面下沉、BookingModal / AiCopilotPanel / detail panels 抽离、ActionTile 统一)
 - Vitest 最小测试基线(纯函数 + OpenClaw route stub/proxy/error 分支)
@@ -127,6 +128,7 @@ freightflow-ai/
 - **真实数据库尚未接入前端工作台**:Prisma schema 已存在,但主工作台仍由 `mock-data.ts` 驱动,刷新页面即丢失所有前端操作改动。详见 [database.md](./database.md)。
 - **真实数据库尚未启动**:主工作台会优先请求 `/api/shipments` 与 `/api/contacts`;无 PostgreSQL 时 API 回退服务端 mock,前端动作仍保留本地演示状态并提示未持久化。详见 [database.md](./database.md)。
 - **邮箱真发需要外部开通**:系统已支持 IMAP/SMTP 配置与连接测试,但需要在邮箱服务商后台开启 IMAP/SMTP 并填写授权码。email log 持久化仍依赖 PostgreSQL 中存在对应 shipment。
+- **真实 IMAP 拉信仍待接入**:`POST /api/email-sync/run` 当前仍使用 mock message 入队;IMAP 连接验证已存在,但还未把真实 INBOX message 拉取接入识别服务。
 - **没有真实附件 / 文档流**:附件名是占位字符串。
 - **没有登录、权限、用户体系**。
 - **测试仍不完整**:已有 Vitest 最小单测基线,但没有覆盖率阈值和 E2E。

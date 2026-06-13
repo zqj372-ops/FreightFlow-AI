@@ -33,6 +33,11 @@
   - 自定义 prompt 输入
   - 请求状态展示（idle / loading / success / error）
   - AI 返回文本格式化渲染
+- 已完成邮件识别人工审核闭环：
+  - 邮件识别队列提供“确认写入 / 标记异常 / 忽略”中文操作
+  - `POST /api/email-recognitions/[id]/review` 统一处理审核动作
+  - SO 回传、补料确认、订舱/催单回复、异常邮件均需操作员确认后才写回 Shipment
+  - 忽略动作只关闭识别项,不写回 Shipment
 - 已完成 `/api/ai/openclaw` 路由：
   - 未配置环境变量时返回 stub 响应
   - 配置 `OPENCLAW_API_URL` 后转发到外部服务
@@ -176,6 +181,7 @@ type ShipmentRecord = {
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/ai/openclaw/route.ts`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/ai/openclaw/route.test.ts`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/contacts/route.ts`
+- `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/email-recognitions/[id]/review/route.ts`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/shipments/route.ts`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/shipments/[id]/route.ts`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/shipments/[id]/actions/route.ts`
@@ -198,7 +204,7 @@ type ShipmentRecord = {
 
 - 本机尚无可用 PostgreSQL 服务,因此 Prisma migration / seed 未实际落库验证。
 - 前端主工作台尚未从 mock/useState 切到 shipment/contact API。
-- booking modal 仍然是前端本地模拟发送，没有真实 SMTP / 邮件服务集成。
+- 真实 IMAP 拉信尚未接入识别服务,当前同步接口仍用 mock message 入队。
 - 通讯录 API 已可持久化到 `contacts`,但 booking modal 尚未接入该 API。
 - AI 接口虽然有代理路由，但未验证真实 OpenClaw 服务的返回协议稳定性。
 - `OPENCLAW_API_URL`、`OPENCLAW_API_KEY` 仅预留，未形成完整部署说明。

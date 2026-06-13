@@ -1,6 +1,12 @@
 import {
+  ActionSource,
   EmailMessageSyncStatus,
   EmailRecognitionStatus,
+  EmailRecognitionType as DbEmailRecognitionTypeEnum,
+  ShipmentActionType,
+  ShipmentDocumentStatus,
+  ShipmentStatus,
+  SoStatus,
   type EmailRecognitionType as DbEmailRecognitionType,
 } from "@prisma/client";
 
@@ -34,6 +40,17 @@ export type EmailRecognitionSyncResult = {
   duplicateCount: number;
   importedCount: number;
   recognitions: EmailRecognitionQueueItem[];
+};
+
+export type EmailRecognitionReviewInput = {
+  reviewer?: string;
+};
+
+export type EmailRecognitionReviewResult = {
+  recognitionId: string;
+  shipmentId: string | null;
+  status: "confirmed" | "ignored" | "rejected";
+  summary: string;
 };
 
 const mockMessages: RawEmailMessage[] = [
@@ -250,5 +267,210 @@ export async function runEmailRecognitionSyncWithFallback() {
     }
 
     throw error;
+  }
+}
+
+export async function confirmEmailRecognition(id: string, input: EmailRecognitionReviewInput = {}) {
+  return prisma.$transaction(async (tx) => {
+    const recognition = await tx.emailRecognitionResult.findUnique({
+      include: { emailMessage: true },
+      where: { id },
+    });
+
+    if (!recognition) {
+      throw new Error("Recognition not found.");
+    }
+
+    if (!recognition.matchedShipmentId) {
+      throw new Error("Recognition is not matched to a shipment.");
+    }
+
+    const shipment = await tx.shipment.findUnique({ where: { id: recognition.matchedShipmentId } });
+    if (!shipment) {
+      throw new Error("Matched shipment not found.");
+    }
+
+    const writeback = buildRecognitionWriteback(recognition.recognitionType, shipment.status);
+
+    await tx.shipment.update({
+      where: { id: recognition.matchedShipmentId },
+      data: writeback.shipmentData,
+    });
+
+    await tx.emailRecognitionResult.update({
+      where: { id },
+      data: {
+        reviewedAt: new Date(),
+        reviewedBy: normalizeReviewer(input.reviewer),
+        status: EmailRecognitionStatus.CONFIRMED,
+      },
+    });
+
+    await tx.emailMessage.update({
+      where: { id: recognition.emailMessageId },
+      data: { syncStatus: EmailMessageSyncStatus.CONFIRMED },
+    });
+
+    await tx.shipmentActionLog.create({
+      data: {
+        actionType: writeback.actionType,
+        actorName: normalizeReviewer(input.reviewer),
+        shipmentId: recognition.matchedShipmentId,
+        source: ActionSource.UI,
+        summary: writeback.summary,
+      },
+    });
+
+    return {
+      recognitionId: id,
+      shipmentId: recognition.matchedShipmentId,
+      status: "confirmed",
+      summary: writeback.summary,
+    } satisfies EmailRecognitionReviewResult;
+  });
+}
+
+export async function markEmailRecognitionException(id: string, input: EmailRecognitionReviewInput = {}) {
+  return prisma.$transaction(async (tx) => {
+    const recognition = await tx.emailRecognitionResult.findUnique({
+      include: { emailMessage: true },
+      where: { id },
+    });
+
+    if (!recognition) {
+      throw new Error("Recognition not found.");
+    }
+
+    if (!recognition.matchedShipmentId) {
+      throw new Error("Recognition is not matched to a shipment.");
+    }
+
+    const summary = `邮件识别异常：${recognition.summary}`;
+
+    await tx.shipment.update({
+      where: { id: recognition.matchedShipmentId },
+      data: { status: ShipmentStatus.EXCEPTION_PROCESSING },
+    });
+
+    await tx.shipmentException.create({
+      data: {
+        message: summary,
+        shipmentId: recognition.matchedShipmentId,
+      },
+    });
+
+    await tx.emailRecognitionResult.update({
+      where: { id },
+      data: {
+        reviewedAt: new Date(),
+        reviewedBy: normalizeReviewer(input.reviewer),
+        status: EmailRecognitionStatus.CONFIRMED,
+      },
+    });
+
+    await tx.emailMessage.update({
+      where: { id: recognition.emailMessageId },
+      data: { syncStatus: EmailMessageSyncStatus.CONFIRMED },
+    });
+
+    await tx.shipmentActionLog.create({
+      data: {
+        actionType: ShipmentActionType.EXCEPTION_MARK,
+        actorName: normalizeReviewer(input.reviewer),
+        shipmentId: recognition.matchedShipmentId,
+        source: ActionSource.UI,
+        summary,
+      },
+    });
+
+    return {
+      recognitionId: id,
+      shipmentId: recognition.matchedShipmentId,
+      status: "confirmed",
+      summary,
+    } satisfies EmailRecognitionReviewResult;
+  });
+}
+
+export async function ignoreEmailRecognition(id: string, input: EmailRecognitionReviewInput = {}) {
+  return prisma.$transaction(async (tx) => {
+    const recognition = await tx.emailRecognitionResult.findUnique({ where: { id } });
+
+    if (!recognition) {
+      throw new Error("Recognition not found.");
+    }
+
+    await tx.emailRecognitionResult.update({
+      where: { id },
+      data: {
+        reviewedAt: new Date(),
+        reviewedBy: normalizeReviewer(input.reviewer),
+        status: EmailRecognitionStatus.IGNORED,
+      },
+    });
+
+    await tx.emailMessage.update({
+      where: { id: recognition.emailMessageId },
+      data: { syncStatus: EmailMessageSyncStatus.IGNORED },
+    });
+
+    return {
+      recognitionId: id,
+      shipmentId: recognition.matchedShipmentId,
+      status: "ignored",
+      summary: "邮件识别已忽略，未写回 Shipment。",
+    } satisfies EmailRecognitionReviewResult;
+  });
+}
+
+function normalizeReviewer(reviewer: string | undefined) {
+  return reviewer?.trim() || "操作员";
+}
+
+function buildRecognitionWriteback(type: DbEmailRecognitionType, currentStatus: ShipmentStatus) {
+  switch (type) {
+    case DbEmailRecognitionTypeEnum.SO_RECEIVED:
+      return {
+        actionType: ShipmentActionType.SO_RECOGNITION,
+        shipmentData: {
+          soStatus: SoStatus.RECOGNIZED,
+          status:
+            currentStatus === ShipmentStatus.WAITING_RELEASE || currentStatus === ShipmentStatus.RELEASE_FOLLOWED_UP
+              ? ShipmentStatus.RELEASED
+              : currentStatus,
+        },
+        summary: "SO 回传已人工确认并写回 Shipment。仍保留人工审核记录。",
+      };
+    case DbEmailRecognitionTypeEnum.SUPPLEMENT_CONFIRMED:
+      return {
+        actionType: ShipmentActionType.DOCUMENTS,
+        shipmentData: {
+          documentStatus: ShipmentDocumentStatus.CONFIRMED,
+          status:
+            currentStatus === ShipmentStatus.DOCUMENTS_SENT || currentStatus === ShipmentStatus.DOCUMENTS_CONFIRMING
+              ? ShipmentStatus.DOCUMENTS_CONFIRMED
+              : currentStatus,
+        },
+        summary: "补料确认邮件已人工确认并写回 Shipment。",
+      };
+    case DbEmailRecognitionTypeEnum.BOOKING_REPLY:
+    case DbEmailRecognitionTypeEnum.FOLLOW_UP_REPLY:
+      return {
+        actionType: ShipmentActionType.FOLLOW_UP,
+        shipmentData: {
+          lastEmailTime: new Date(),
+        },
+        summary: "订舱/催单回复已人工确认并记录到 Shipment。",
+      };
+    case DbEmailRecognitionTypeEnum.EXCEPTION:
+      return {
+        actionType: ShipmentActionType.EXCEPTION_MARK,
+        shipmentData: {
+          status: ShipmentStatus.EXCEPTION_PROCESSING,
+        },
+        summary: "异常邮件已人工确认并写回 Shipment。",
+      };
+    case DbEmailRecognitionTypeEnum.UNKNOWN:
+      throw new Error("Unknown recognition cannot be confirmed. Ignore or mark it as exception instead.");
   }
 }

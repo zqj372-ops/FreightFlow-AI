@@ -25,6 +25,15 @@ export type EmailRecognitionSyncResult = {
   recognitions: EmailRecognitionQueueItem[];
 };
 
+export type EmailRecognitionReviewAction = "confirm" | "ignore" | "mark_exception";
+
+export type EmailRecognitionReviewResult = {
+  recognitionId: string;
+  shipmentId: string | null;
+  status: "confirmed" | "ignored" | "rejected";
+  summary: string;
+};
+
 type ApiEnvelope<T> = {
   data?: T;
   error?: string;
@@ -197,6 +206,32 @@ export async function runEmailSyncFromApi() {
 
   if (!response.ok || !payload.data) {
     throw new Error(payload.error ?? "Failed to sync email recognitions.");
+  }
+
+  return {
+    data: payload.data,
+    source: payload.source ?? "database",
+  };
+}
+
+export async function reviewEmailRecognitionFromApi({
+  action,
+  id,
+  reviewer = "操作员",
+}: {
+  action: EmailRecognitionReviewAction;
+  id: string;
+  reviewer?: string;
+}) {
+  const response = await fetch(`/api/email-recognitions/${encodeURIComponent(id)}/review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, reviewer }),
+  });
+  const payload = await readJson<EmailRecognitionReviewResult>(response);
+
+  if (!response.ok || !payload.data) {
+    throw new Error(payload.error ?? "Failed to review email recognition.");
   }
 
   return {
