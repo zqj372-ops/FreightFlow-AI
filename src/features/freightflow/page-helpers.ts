@@ -43,6 +43,23 @@ export type DetailActionLabel =
 
 export type SurfaceTone = "danger" | "info" | "neutral" | "success" | "warning";
 
+export type ShipmentBrief = {
+  primaryLine: string;
+  route: string;
+  summaryItems: Array<{ label: string; value: string }>;
+  timing: string;
+};
+
+export type ShipmentDetailGroup = {
+  items: Array<{ label: string; value: string }>;
+  title: string;
+};
+
+export type BookingPlanCreateCheck = {
+  canCreate: boolean;
+  message: string;
+};
+
 export const contactRoleLabel: Record<ContactRole, string> = {
   booking_agent: "订舱代理",
   customs: "报关 / 单证",
@@ -99,6 +116,93 @@ export function pickRecommendedAction(shipment: ShipmentRecord): DetailActionLab
   if (shipment.soStatus === "待识别") return "SO 识别";
   if (["等待放舱", "已发送订舱", "已催放舱"].includes(shipment.status)) return "催单提醒";
   return "AMS/ACI/ISF";
+}
+
+export function buildShipmentBrief(shipment: ShipmentRecord): ShipmentBrief {
+  const route = `${shipment.originPort} → ${shipment.destinationPort}`;
+
+  return {
+    primaryLine: `SO ${shipment.soNo} · 柜号 ${shipment.containerNo} · ${shipment.containerType}`,
+    route,
+    summaryItems: [
+      { label: "航线", value: route },
+      { label: "船名航次", value: shipment.vesselVoyage },
+      { label: "柜型", value: shipment.containerType },
+      { label: "责任人", value: `${shipment.operator} · ${shipment.bookingAgent}` },
+    ],
+    timing: `ETD ${shipment.etd} / ETA ${shipment.eta}`,
+  };
+}
+
+export function buildShipmentDetailGroups(shipment: ShipmentRecord): ShipmentDetailGroup[] {
+  return [
+    {
+      title: "基础信息",
+      items: [
+        { label: "批次号", value: shipment.batchNo },
+        { label: "SO", value: shipment.soNo },
+        { label: "柜号", value: shipment.containerNo },
+        { label: "状态", value: shipment.status },
+        { label: "订舱代理", value: shipment.bookingAgent },
+        { label: "操作员", value: shipment.operator },
+      ],
+    },
+    {
+      title: "航线与时效",
+      items: [
+        { label: "船公司", value: shipment.carrier },
+        { label: "起运港", value: shipment.originPort },
+        { label: "中转港", value: shipment.transitPort || "直达" },
+        { label: "目的港", value: shipment.destinationPort },
+        { label: "船名航次", value: shipment.vesselVoyage },
+        { label: "ETD", value: shipment.etd },
+        { label: "ETA", value: shipment.eta },
+        { label: "截补料", value: shipment.cutoffTime },
+      ],
+    },
+    {
+      title: "作业地点",
+      items: [
+        { label: "提柜地点", value: shipment.pickupLocation },
+        { label: "还柜地点", value: shipment.returnLocation },
+      ],
+    },
+    {
+      title: "单证与提醒",
+      items: [
+        { label: "邮件状态", value: shipment.mailStatus },
+        { label: "SO 状态", value: shipment.soStatus },
+        { label: "补料状态", value: shipment.documentStatus },
+        { label: "AMS", value: shipment.documentProgress.ams },
+        { label: "ACI", value: shipment.documentProgress.aci },
+        { label: "ISF", value: shipment.documentProgress.isf },
+        { label: "提醒", value: shipment.reminderFlags.join(" / ") || "无" },
+        { label: "异常", value: shipment.exceptions.join(" / ") || "无" },
+      ],
+    },
+  ];
+}
+
+export function canCreateBookingPlanFromShipment(shipment: ShipmentRecord): BookingPlanCreateCheck {
+  if (shipment.mailStatus === "已发送") {
+    return { canCreate: false, message: "订舱邮件已发送" };
+  }
+
+  const requiredFields: Array<{ label: string; value: string }> = [
+    { label: "订舱代理", value: shipment.bookingAgent },
+    { label: "船公司", value: shipment.carrier },
+    { label: "柜型", value: shipment.containerType },
+    { label: "起运港", value: shipment.originPort },
+    { label: "目的港", value: shipment.destinationPort },
+    { label: "预计 ETD", value: shipment.etd },
+  ];
+  const missingFields = requiredFields.filter((field) => field.value.trim().length === 0).map((field) => field.label);
+
+  if (missingFields.length > 0) {
+    return { canCreate: false, message: `资料缺失：${missingFields.join("、")}` };
+  }
+
+  return { canCreate: true, message: "可新建订舱计划并生成中文草稿" };
 }
 
 export function levelDot(level: AlertLevel) {

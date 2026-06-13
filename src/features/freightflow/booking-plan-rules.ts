@@ -56,7 +56,7 @@ const requiredShipmentFields: Array<{ key: keyof ShipmentRecord; label: string }
 export function evaluateBookingPlanReadiness(
   shipment: ShipmentRecord,
 ): BookingPlanReadiness {
-  if (shipment.mailStatus !== "未发送") {
+  if (shipment.mailStatus === "已发送") {
     return {
       missingFields: [],
       riskFlags: ["订舱邮件已发送"],

@@ -3,14 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Bell,
-  Clock3,
   FileText,
   Mail,
-  MapPinned,
   RefreshCw,
   ShipWheel,
   TriangleAlert,
-  UserRound,
 } from "lucide-react";
 import {
   MetricStrip,
@@ -30,6 +27,9 @@ import {
 import {
   buildBookingDraft,
   buildContacts,
+  buildShipmentBrief,
+  buildShipmentDetailGroups,
+  canCreateBookingPlanFromShipment,
   cutoffTone,
   isValidEmail,
   normalizeEmail,
@@ -83,6 +83,7 @@ import { type DetailItem } from "@/features/freightflow/shared-ui";
 import {
   ShipmentActionPanel,
   ShipmentDetailPanel,
+  ShipmentDetailDrawer,
   ShipmentFieldPanel,
 } from "@/features/freightflow/detail-panels";
 
@@ -113,6 +114,7 @@ export function FreightflowWorkbenchPage() {
   const [emailRecognitions, setEmailRecognitions] = useState<EmailRecognitionQueueItem[]>([]);
   const [selectedBookingPlanIds, setSelectedBookingPlanIds] = useState<Set<string>>(() => new Set());
   const [bookingDraftGenerating, setBookingDraftGenerating] = useState(false);
+  const [detailDrawerOpen, setDetailDrawerOpen] = useState(false);
   const [emailSyncing, setEmailSyncing] = useState(false);
   const [reviewingEmailRecognitionId, setReviewingEmailRecognitionId] = useState<string | null>(null);
   const [contactDraft, setContactDraft] = useState<ContactDraft>({
@@ -225,6 +227,9 @@ export function FreightflowWorkbenchPage() {
   }, [bookingShipmentId, shipmentState]);
 
   const selectedShipmentLevel = getAlertLevel(selectedShipment);
+  const shipmentBrief = buildShipmentBrief(selectedShipment);
+  const shipmentDetailGroups = buildShipmentDetailGroups(selectedShipment);
+  const bookingPlanCreateCheck = canCreateBookingPlanFromShipment(selectedShipment);
   const fieldItems = [
     { label: "订舱代理", value: selectedShipment.bookingAgent },
     { label: "操作员", value: selectedShipment.operator },
@@ -236,33 +241,6 @@ export function FreightflowWorkbenchPage() {
     { className: toneClass(progressTone(selectedShipment.documentProgress.aci)), label: "ACI", value: selectedShipment.documentProgress.aci },
     { className: toneClass(progressTone(selectedShipment.documentProgress.isf)), label: "ISF", value: selectedShipment.documentProgress.isf },
   ] satisfies ReadonlyArray<{ className: string; label: string; value: string }>;
-
-  const shipmentHeaderItems = [
-    {
-      icon: ShipWheel,
-      label: "航线",
-      value: `${selectedShipment.originPort} → ${selectedShipment.destinationPort}`,
-    },
-    {
-      icon: Clock3,
-      label: "ETD / ETA",
-      value: `${selectedShipment.etd} / ${selectedShipment.eta}`,
-    },
-    {
-      icon: MapPinned,
-      label: "柜型 / 中转",
-      value: `${selectedShipment.containerType} · ${selectedShipment.transitPort || "直达"}`,
-    },
-    {
-      icon: UserRound,
-      label: "责任人",
-      value: `${selectedShipment.operator} · ${selectedShipment.bookingAgent}`,
-    },
-  ] satisfies ReadonlyArray<{
-    icon: React.ComponentType<{ className?: string }>;
-    label: string;
-    value: string;
-  }>;
 
   const recommendedAction = pickRecommendedAction(selectedShipment);
   const reminderItems = [...selectedShipment.reminderFlags, ...selectedShipment.exceptions];
@@ -658,6 +636,37 @@ export function FreightflowWorkbenchPage() {
     }
   }
 
+  async function handleCreateBookingPlanForShipment(shipment: ShipmentRecord) {
+    if (bookingDraftGenerating) return;
+
+    const createCheck = canCreateBookingPlanFromShipment(shipment);
+    if (!createCheck.canCreate) {
+      setToast({ tone: "info", message: createCheck.message });
+      return;
+    }
+
+    setBookingDraftGenerating(true);
+    try {
+      const result = await batchGenerateBookingDrafts([shipment.id]);
+      setSelectedBookingPlanIds(new Set());
+      await refreshBookingPlans();
+      setToast({
+        tone: result.data.successCount > 0 ? "success" : "info",
+        message:
+          result.data.successCount > 0
+            ? `已为 ${shipment.batchNo} 生成待确认订舱草稿`
+            : result.data.items[0]?.message ?? "未生成订舱草稿",
+      });
+    } catch (error) {
+      setToast({
+        tone: "info",
+        message: error instanceof Error ? error.message : "新建订舱计划失败",
+      });
+    } finally {
+      setBookingDraftGenerating(false);
+    }
+  }
+
   async function handleRunEmailSync() {
     if (emailSyncing) return;
 
@@ -980,7 +989,10 @@ export function FreightflowWorkbenchPage() {
             primaryActionLabel="AI 总结"
             onRefresh={() => void refreshWorkbenchData(true)}
             onSecondaryAction={(action) => handleAction(action)}
+            onTopCreateBookingPlan={() => void handleCreateBookingPlanForShipment(selectedShipment)}
             selectedShipment={selectedShipment}
+            topCreateBookingPlanDisabled={bookingDraftGenerating || !bookingPlanCreateCheck.canCreate}
+            topCreateBookingPlanTitle={bookingPlanCreateCheck.message}
           />
 
           <div className="mt-3">
@@ -1010,10 +1022,13 @@ export function FreightflowWorkbenchPage() {
                 aiSummary={selectedShipment.aiSummary}
                 batchNo={selectedShipment.batchNo}
                 containerNo={selectedShipment.containerNo}
+                createBookingPlanCheck={bookingPlanCreateCheck}
                 cutoffBadgeClassName={toneClass(cutoffTone(selectedShipment.hoursToCutoff))}
                 cutoffLabel={`截补料 ${selectedShipment.hoursToCutoff}h`}
-                detailItems={shipmentHeaderItems}
                 nextAction={selectedShipment.nextAction}
+                onCreateBookingPlan={() => void handleCreateBookingPlanForShipment(selectedShipment)}
+                onOpenDetails={() => setDetailDrawerOpen(true)}
+                shipmentBrief={shipmentBrief}
                 soNo={selectedShipment.soNo}
                 status={selectedShipment.status}
                 statusLevel={selectedShipmentLevel}
@@ -1133,6 +1148,13 @@ export function FreightflowWorkbenchPage() {
         recipientInput={recipientInput}
         recipientInputInvalid={recipientInputInvalid}
         shipment={bookingShipment}
+      />
+
+      <ShipmentDetailDrawer
+        groups={shipmentDetailGroups}
+        isOpen={detailDrawerOpen}
+        onClose={() => setDetailDrawerOpen(false)}
+        shipmentBrief={shipmentBrief}
       />
 
       <OpenClawSettingsModal

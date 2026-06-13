@@ -3,6 +3,7 @@ import {
   CircleX,
   Clock3,
   FileSearch,
+  FilePlus2,
   FileText,
   Filter,
   LayoutDashboard,
@@ -47,8 +48,12 @@ type HeaderProps = {
   onPrimaryAction: () => void;
   onRefresh: () => void;
   onSecondaryAction: (action: "催单提醒" | "补料文件") => void;
+  onTopCreateBookingPlan?: () => void;
   primaryActionLabel?: string;
   selectedShipment: ShipmentRecord;
+  topCreateBookingPlanDisabled?: boolean;
+  topCreateBookingPlanLabel?: string;
+  topCreateBookingPlanTitle?: string;
 };
 
 type MetricStripProps = {
@@ -299,8 +304,12 @@ export function WorkbenchHeader({
   onPrimaryAction,
   onRefresh,
   onSecondaryAction,
+  onTopCreateBookingPlan,
   primaryActionLabel = "AI 总结",
   selectedShipment,
+  topCreateBookingPlanDisabled = false,
+  topCreateBookingPlanLabel = "新建订舱计划",
+  topCreateBookingPlanTitle,
 }: HeaderProps) {
   const navInfo = navMeta[activeNav] ?? navMeta["订舱工作台"];
 
@@ -330,6 +339,18 @@ export function WorkbenchHeader({
             </div>
 
             <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+              {onTopCreateBookingPlan ? (
+                <button
+                  type="button"
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-slate-950 px-3.5 text-sm font-medium text-white transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500/70 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
+                  onClick={onTopCreateBookingPlan}
+                  disabled={topCreateBookingPlanDisabled}
+                  title={topCreateBookingPlanTitle}
+                >
+                  <FilePlus2 className="h-4 w-4" />
+                  {topCreateBookingPlanLabel}
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60"

@@ -19,6 +19,16 @@ describe("evaluateBookingPlanReadiness", () => {
     expect(result.riskFlags).toContain("可生成订舱草稿");
   });
 
+  it("keeps a followed-up but unsent shipment ready for a pending booking draft", () => {
+    const result = evaluateBookingPlanReadiness({
+      ...shipments[0],
+      mailStatus: "跟进中",
+    });
+
+    expect(result.status).toBe("ready_to_draft");
+    expect(result.riskFlags).toContain("可生成订舱草稿");
+  });
+
   it("marks missing booking agent and container type as missing info", () => {
     const result = evaluateBookingPlanReadiness({
       ...shipments[0],
