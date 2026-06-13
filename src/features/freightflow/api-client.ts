@@ -3,6 +3,28 @@ import type { ShipmentRecord } from "@/lib/mock-data";
 import type { BookingDraftBatchResult, BookingPlanRecord } from "./booking-plan-rules";
 import type { BookingDraft, ContactRecord, DetailActionLabel } from "./page-helpers";
 
+export type EmailRecognitionQueueItem = {
+  bodyPreview: string;
+  confidence: number;
+  emailMessageId: string;
+  from: string;
+  id: string;
+  matchedShipmentId: string | null;
+  messageId: string;
+  receivedAt: string;
+  recognitionType: "BOOKING_REPLY" | "EXCEPTION" | "FOLLOW_UP_REPLY" | "SO_RECEIVED" | "SUPPLEMENT_CONFIRMED" | "UNKNOWN";
+  riskFlags: string[];
+  status: "confirmed" | "ignored" | "pending_review" | "rejected";
+  subject: string;
+  summary: string;
+};
+
+export type EmailRecognitionSyncResult = {
+  duplicateCount: number;
+  importedCount: number;
+  recognitions: EmailRecognitionQueueItem[];
+};
+
 type ApiEnvelope<T> = {
   data?: T;
   error?: string;
@@ -146,6 +168,35 @@ export async function batchGenerateBookingDrafts(shipmentIds: string[]) {
 
   if (!response.ok || !payload.data) {
     throw new Error(payload.error ?? "Failed to generate booking drafts.");
+  }
+
+  return {
+    data: payload.data,
+    source: payload.source ?? "database",
+  };
+}
+
+export async function loadEmailRecognitionsFromApi(): Promise<ApiLoadResult<EmailRecognitionQueueItem[]>> {
+  const response = await fetch("/api/email-recognitions", { cache: "no-store" });
+  const payload = await readJson<EmailRecognitionQueueItem[]>(response);
+
+  if (!response.ok || !payload.data) {
+    throw new Error(payload.error ?? "Failed to load email recognitions.");
+  }
+
+  return {
+    data: payload.data,
+    source: payload.source ?? "database",
+    warning: payload.warning,
+  };
+}
+
+export async function runEmailSyncFromApi() {
+  const response = await fetch("/api/email-sync/run", { method: "POST" });
+  const payload = await readJson<EmailRecognitionSyncResult>(response);
+
+  if (!response.ok || !payload.data) {
+    throw new Error(payload.error ?? "Failed to sync email recognitions.");
   }
 
   return {

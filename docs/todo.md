@@ -64,10 +64,13 @@
 ### 2.2 SO / 补料 / 申报文档流(P1)
 
 - 状态:已完成最小可替换文档流服务层与 API 占位。
+- 状态:已新增邮件识别队列第一版,支持中文/英文/中英混合邮件规则识别,包括 SO 回传、订舱回复、补料确认、催单回复、异常和未知。
+- 状态:已新增邮件消息/识别结果 Prisma 模型与 API: `POST /api/email-sync/run`, `GET /api/email-recognitions`。
+- 重要边界:当前邮件识别只入队并展示待确认项,不会自动写回 Shipment 状态;确认写回留到下一阶段。
 - 已新增 `src/lib/services/documents/document-service.ts`,包含 SO 识别占位接口与补料模板生成占位接口。
 - 已新增 `POST /api/shipments/[shipmentId]/documents/so-recognition`,接收 `fileName / mimeType / sourceText`,返回占位识别结果、置信度和待替换 OCR 提醒。
 - 已新增 `POST /api/shipments/[shipmentId]/documents/supplement-template`,接收 `templateType / language / shipment`,返回 JSON 模板字段清单,为后续 Word / Excel 生成器预留数据结构。
-- 仍需接入真实附件上传、文件存储、SO 文件解析(OCR / parser)、补料模板生成(Word / Excel)、申报回执管理。
+- 仍需接入真实 IMAP 拉取、附件上传、文件存储、SO 文件解析(OCR / parser)、补料模板生成(Word / Excel)、申报回执管理。
 - 最终验收:用户上传 SO 文件 → 自动识别柜号/船公司/ETD → 写入 shipment;用户可生成并下载真实补料模板文件。
 
 ### 2.3 AI 请求审计与历史(P1)

@@ -724,3 +724,14 @@ type ShipmentRecord = {
 - 新增 API: `GET /api/booking-plans`, `POST /api/booking-plans/batch-drafts`, `GET/PATCH /api/email-drafts/[draftId]`, `POST /api/email-drafts/[draftId]/send`。
 - 重要边界:批量操作只生成中文订舱草稿,不会自动发送;发送仍走单票人工确认。
 - 验证: `npm run prisma:validate`, `npm run lint`, `npm test`, `npm run build` 均通过。
+
+# 2026-06-13 · IMAP 邮件识别队列 Phase 2
+
+- 新增实施计划: `docs/superpowers/plans/2026-06-13-imap-recognition-phase-2.md`。
+- 新增邮件识别纯规则: `src/features/freightflow/email-recognition-rules.ts`,覆盖 SO 回传、订舱回复、补料确认、催单回复、异常、未知。
+- 新增邮件识别服务: `src/lib/services/email-recognition/email-recognition-service.ts`,支持 mock 同步、messageId 去重、识别结果入队和数据库不可用 fallback。
+- 新增 Prisma 模型和迁移: `email_messages`, `email_recognition_results`。
+- 新增 API: `POST /api/email-sync/run`, `GET /api/email-recognitions`。
+- 新增工作台面板: `src/features/freightflow/email-recognition-panel.tsx`,显示待确认、异常、已匹配统计和同步邮箱按钮。
+- 重要边界:本阶段只同步、识别、入队和展示,不自动写回 Shipment。
+- 验证: `npm run lint`, `npm test`, `npm run build` 均通过。

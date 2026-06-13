@@ -114,8 +114,10 @@ freightflow-ai/
 - Shipment 主模型样例数据(6 条)
 - 订舱 modal(收件人/抄送/主题/正文/通讯录/检查项)
 - 待发订舱计划面板(资料完整度、可生成草稿、批量生成中文订舱草稿)
+- 邮件识别队列面板(手动同步邮箱、展示待确认识别结果、异常/匹配统计;当前不自动写回 Shipment)
 - AI 副驾(快捷 prompt / 自定义 / 状态徽标 / 段落列表渲染)
 - `/api/booking-plans` / `/api/booking-plans/batch-drafts` / `/api/email-drafts/[draftId]` / `/api/email-drafts/[draftId]/send` 订舱计划与草稿 API
+- `/api/email-sync/run` / `/api/email-recognitions` 邮件同步与识别队列 API
 - `/api/ai/openclaw`(stub 模式 + 转发模式)
 - 一轮结构整理(workbench 页面下沉、BookingModal / AiCopilotPanel / detail panels 抽离、ActionTile 统一)
 - Vitest 最小测试基线(纯函数 + OpenClaw route stub/proxy/error 分支)

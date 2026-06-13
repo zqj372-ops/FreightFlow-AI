@@ -47,6 +47,7 @@ import {
   loadContactsFromApi,
   batchGenerateBookingDrafts,
   loadBookingPlansFromApi,
+  loadEmailRecognitionsFromApi,
   loadEmailSettings,
   loadOpenClawSettings,
   loadShipmentsFromApi,
@@ -55,6 +56,8 @@ import {
   saveEmailSettings,
   saveOpenClawSettings,
   sendBookingEmail,
+  runEmailSyncFromApi,
+  type EmailRecognitionQueueItem,
   type EmailConnectionTest,
   type PublicEmailConfig,
   type OpenClawConnectionTest,
@@ -62,6 +65,7 @@ import {
 } from "@/features/freightflow/api-client";
 import { BookingPlanPanel } from "@/features/freightflow/booking-plan-panel";
 import type { BookingPlanRecord } from "@/features/freightflow/booking-plan-rules";
+import { EmailRecognitionPanel } from "@/features/freightflow/email-recognition-panel";
 import {
   AiCopilotPanel,
   type AiRequestState,
@@ -104,8 +108,10 @@ export function FreightflowWorkbenchPage() {
   const [bookingSending, setBookingSending] = useState(false);
   const [contactState, setContactState] = useState<ContactRecord[]>(() => buildContacts(shipments[0]));
   const [bookingPlans, setBookingPlans] = useState<BookingPlanRecord[]>([]);
+  const [emailRecognitions, setEmailRecognitions] = useState<EmailRecognitionQueueItem[]>([]);
   const [selectedBookingPlanIds, setSelectedBookingPlanIds] = useState<Set<string>>(() => new Set());
   const [bookingDraftGenerating, setBookingDraftGenerating] = useState(false);
+  const [emailSyncing, setEmailSyncing] = useState(false);
   const [contactDraft, setContactDraft] = useState<ContactDraft>({
     email: "",
     label: "",
@@ -404,6 +410,18 @@ export function FreightflowWorkbenchPage() {
     }
   }, []);
 
+  const refreshEmailRecognitions = useCallback(async () => {
+    try {
+      const result = await loadEmailRecognitionsFromApi();
+      setEmailRecognitions(result.data);
+    } catch (error) {
+      setToast({
+        tone: "info",
+        message: error instanceof Error ? error.message : "邮件识别队列加载失败",
+      });
+    }
+  }, []);
+
   useEffect(() => {
     if (!toast) return;
 
@@ -415,10 +433,11 @@ export function FreightflowWorkbenchPage() {
     const timer = window.setTimeout(() => {
       void refreshWorkbenchData();
       void refreshBookingPlans();
+      void refreshEmailRecognitions();
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [refreshBookingPlans, refreshWorkbenchData]);
+  }, [refreshBookingPlans, refreshEmailRecognitions, refreshWorkbenchData]);
 
   useEffect(() => {
     void Promise.allSettled([loadOpenClawSettings(), loadEmailSettings()]).then(([openClawResult, emailResult]) => {
@@ -628,6 +647,27 @@ export function FreightflowWorkbenchPage() {
       });
     } finally {
       setBookingDraftGenerating(false);
+    }
+  }
+
+  async function handleRunEmailSync() {
+    if (emailSyncing) return;
+
+    setEmailSyncing(true);
+    try {
+      const result = await runEmailSyncFromApi();
+      setToast({
+        tone: "success",
+        message: `邮箱同步完成：新增 ${result.data.importedCount}，重复 ${result.data.duplicateCount}`,
+      });
+      await refreshEmailRecognitions();
+    } catch (error) {
+      setToast({
+        tone: "info",
+        message: error instanceof Error ? error.message : "邮箱同步失败",
+      });
+    } finally {
+      setEmailSyncing(false);
     }
   }
 
@@ -981,6 +1021,12 @@ export function FreightflowWorkbenchPage() {
                     onTogglePlan={handleToggleBookingPlan}
                     plans={bookingPlans}
                     selectedIds={selectedBookingPlanIds}
+                  />
+
+                  <EmailRecognitionPanel
+                    items={emailRecognitions}
+                    onSync={() => void handleRunEmailSync()}
+                    syncing={emailSyncing}
                   />
 
                 </div>
