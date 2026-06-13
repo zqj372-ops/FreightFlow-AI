@@ -1086,42 +1086,24 @@ export function FreightflowWorkbenchPage() {
                 <MetricStrip activeColumn={activeColumn} onSelectColumn={handleColumnChange} summary={summary} />
               </div>
 
-              <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-3 min-[1500px]:grid-cols-[minmax(300px,360px)_minmax(0,1fr)_minmax(360px,400px)]">
-            <QueuePanel
-              activeColumn={activeColumn}
-              alertFilter={alertFilter}
-              onAlertFilterChange={setAlertFilter}
-              onClearFilters={handleResetQueueFilters}
-              onColumnChange={handleColumnChange}
-              onOwnerFilterChange={setOwnerFilter}
-              onOpenShipmentStatus={openShipmentStatusEditor}
-              onSearchChange={setSearchTerm}
-              onSelectShipment={handleSelectShipment}
-              ownerFilter={ownerFilter}
-              ownerOptions={ownerOptions}
-              recordsForColumn={recordsForColumn}
-              searchTerm={searchTerm}
-              selectedShipmentId={selectedShipment.id}
-              visibleShipments={visibleShipments}
-            />
-            <section className="grid min-h-0 min-w-0 grid-cols-1 gap-3">
-              <ShipmentDetailPanel
-                aiSummary={selectedShipment.aiSummary}
-                batchNo={selectedShipment.batchNo}
-                containerNo={selectedShipment.containerNo}
-                createBookingPlanCheck={bookingPlanCreateCheck}
-                cutoffBadgeClassName={toneClass(cutoffTone(selectedShipment.hoursToCutoff))}
-                cutoffLabel={`截补料 ${selectedShipment.hoursToCutoff}h`}
-                nextAction={selectedShipment.nextAction}
-                onCreateBookingPlan={openBookingPlanWorkflow}
-                onOpenDetails={() => openShipmentStatusEditor(selectedShipment.id)}
-                shipmentBrief={shipmentBrief}
-                soNo={selectedShipment.soNo}
-                status={selectedShipment.status}
-                statusLevel={selectedShipmentLevel}
-                vesselVoyage={selectedShipment.vesselVoyage}
-              />
-            </section>
+              <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-3">
+                <QueuePanel
+                  activeColumn={activeColumn}
+                  alertFilter={alertFilter}
+                  onAlertFilterChange={setAlertFilter}
+                  onClearFilters={handleResetQueueFilters}
+                  onColumnChange={handleColumnChange}
+                  onOwnerFilterChange={setOwnerFilter}
+                  onOpenShipmentStatus={openShipmentStatusEditor}
+                  onSearchChange={setSearchTerm}
+                  onSelectShipment={handleSelectShipment}
+                  ownerFilter={ownerFilter}
+                  ownerOptions={ownerOptions}
+                  recordsForColumn={recordsForColumn}
+                  searchTerm={searchTerm}
+                  selectedShipmentId={selectedShipment.id}
+                  visibleShipments={visibleShipments}
+                />
               </div>
             </>
           ) : activeBookingSubNav === "柜子状态明细" ? (
