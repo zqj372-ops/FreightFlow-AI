@@ -30,12 +30,12 @@ export function EmailRecognitionPanel({ items, onReview, onSync, reviewingId, sy
   const exceptionCount = items.filter((item) => item.recognitionType === "EXCEPTION").length;
 
   return (
-    <section className="rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm shadow-slate-200/30">
+    <section className="rounded-lg border border-slate-200 bg-white px-3.5 py-3.5 shadow-sm shadow-slate-200/30">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-sm font-semibold text-slate-950">邮件识别队列</p>
           <p className="mt-1 text-xs leading-5 text-slate-500">
-            IMAP 邮件同步后先进入待确认队列；本阶段不会自动写回 Shipment。
+            IMAP 邮件同步后进入待确认队列；操作员确认后才写回 Shipment。
           </p>
         </div>
         <button
@@ -75,51 +75,49 @@ export function EmailRecognitionPanel({ items, onReview, onSync, reviewingId, sy
             const reviewing = reviewingId === item.id;
 
             return (
-            <article key={item.id} className="rounded-lg border border-slate-200 px-3 py-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className={`rounded-full border px-2 py-0.5 text-[11px] ${recognitionClassName[item.recognitionType]}`}>
-                  {recognitionLabel[item.recognitionType]}
-                </span>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-500">
-                  置信度 {Math.round(item.confidence * 100)}%
-                </span>
-              </div>
-              <p className="mt-2 break-words text-sm font-medium text-slate-950">{item.subject}</p>
-              <p className="mt-1 text-xs text-slate-500">{item.from}</p>
-              <p className="mt-2 text-xs leading-5 text-slate-600">{item.summary}</p>
-              {item.riskFlags.length > 0 ? (
-                <p className="mt-2 text-xs leading-5 text-red-600">{item.riskFlags.join(" / ")}</p>
-              ) : null}
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => onReview(item.id, "confirm")}
-                  disabled={reviewing || !item.matchedShipmentId || item.recognitionType === "UNKNOWN"}
-                  className="inline-flex min-h-8 items-center justify-center rounded-md bg-slate-950 px-3 text-xs font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
-                >
-                  {reviewing ? "处理中..." : "确认写入"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onReview(item.id, "mark_exception")}
-                  disabled={reviewing || !item.matchedShipmentId}
-                  className="inline-flex min-h-8 items-center justify-center rounded-md border border-red-200 bg-red-50 px-3 text-xs font-medium text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-                >
-                  标记异常
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onReview(item.id, "ignore")}
-                  disabled={reviewing}
-                  className="inline-flex min-h-8 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                >
-                  忽略
-                </button>
-                <span className="text-[11px] text-slate-400">
-                  {item.matchedShipmentId ? `关联 ${item.matchedShipmentId}` : "未匹配 Shipment"}
-                </span>
-              </div>
-            </article>
+              <article key={item.id} className="rounded-lg border border-slate-200 px-3 py-2.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`rounded-full border px-2 py-0.5 text-[11px] ${recognitionClassName[item.recognitionType]}`}>
+                    {recognitionLabel[item.recognitionType]}
+                  </span>
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-500">
+                    置信度 {Math.round(item.confidence * 100)}%
+                  </span>
+                </div>
+                <p className="mt-2 break-words text-sm font-medium text-slate-950">{item.subject}</p>
+                <p className="mt-1 text-xs text-slate-500">{item.from}</p>
+                <p className="mt-2 text-xs leading-5 text-slate-600">{item.summary}</p>
+                {item.riskFlags.length > 0 ? (
+                  <p className="mt-2 text-xs leading-5 text-red-600">{item.riskFlags.join(" / ")}</p>
+                ) : null}
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onReview(item.id, "confirm")}
+                    disabled={reviewing || !item.matchedShipmentId || item.recognitionType === "UNKNOWN"}
+                    className="inline-flex min-h-8 items-center justify-center rounded-md bg-slate-950 px-3 text-xs font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                  >
+                    {reviewing ? "处理中..." : "确认写入"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onReview(item.id, "mark_exception")}
+                    disabled={reviewing || !item.matchedShipmentId}
+                    className="inline-flex min-h-8 items-center justify-center rounded-md border border-red-200 bg-red-50 px-3 text-xs font-medium text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                    标记异常
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onReview(item.id, "ignore")}
+                    disabled={reviewing}
+                    className="col-span-2 inline-flex min-h-8 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                    忽略
+                  </button>
+                </div>
+                <p className="mt-2 text-[11px] text-slate-400">{item.matchedShipmentId ? `关联 ${item.matchedShipmentId}` : "未匹配 Shipment"}</p>
+              </article>
             );
           })
         )}

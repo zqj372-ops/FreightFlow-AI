@@ -35,8 +35,8 @@ export function BookingPlanPanel({
   const draftReadyCount = plans.filter((plan) => plan.planStatus === "draft_ready").length;
 
   return (
-    <section className="rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm shadow-slate-200/30">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <section className="rounded-lg border border-slate-200 bg-white px-3.5 py-3.5 shadow-sm shadow-slate-200/30">
+      <div className="flex flex-col gap-3">
         <div>
           <p className="text-sm font-semibold text-slate-950">待发订舱计划</p>
           <p className="mt-1 text-xs leading-5 text-slate-500">
@@ -47,22 +47,22 @@ export function BookingPlanPanel({
           type="button"
           onClick={onGenerateDrafts}
           disabled={selectedIds.size === 0 || generating}
-          className="inline-flex min-h-10 items-center justify-center rounded-lg bg-cyan-600 px-3.5 text-sm font-medium text-white transition hover:bg-cyan-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+          className="inline-flex min-h-10 w-full items-center justify-center rounded-lg bg-cyan-600 px-3.5 text-sm font-medium text-white transition hover:bg-cyan-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
         >
           {generating ? "生成中..." : `批量生成草稿 (${selectedIds.size})`}
         </button>
       </div>
 
       <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
           <p className="text-slate-500">待处理</p>
           <p className="mt-1 text-lg font-semibold text-slate-950">{plans.length}</p>
         </div>
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-2">
           <p className="text-emerald-700">可生成</p>
           <p className="mt-1 text-lg font-semibold text-emerald-950">{readyCount}</p>
         </div>
-        <div className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2">
+        <div className="rounded-lg border border-cyan-200 bg-cyan-50 px-2.5 py-2">
           <p className="text-cyan-700">草稿待确认</p>
           <p className="mt-1 text-lg font-semibold text-cyan-950">{draftReadyCount}</p>
         </div>
@@ -81,7 +81,7 @@ export function BookingPlanPanel({
             return (
               <label
                 key={plan.shipmentId}
-                className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-3 py-3 transition hover:border-cyan-200 hover:bg-cyan-50/30"
+                className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-slate-200 px-3 py-2.5 transition hover:border-cyan-200 hover:bg-cyan-50/30"
               >
                 <input
                   type="checkbox"

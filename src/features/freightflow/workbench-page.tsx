@@ -273,6 +273,11 @@ export function FreightflowWorkbenchPage() {
         : "border-amber-200 bg-amber-50 text-amber-700",
     label: item,
   }));
+  const robotHubMetrics = {
+    bookingPlans: bookingPlans.length,
+    emailRecognitions: emailRecognitions.length,
+    exceptionEmails: emailRecognitions.filter((item) => item.recognitionType === "EXCEPTION").length,
+  };
   const detailActions = [
     {
       detail: selectedShipment.mailStatus === "未发送" ? "当前还未生成邮件建议" : `最后发送时间 ${selectedShipment.lastEmailTime}`,
@@ -982,97 +987,115 @@ export function FreightflowWorkbenchPage() {
             <MetricStrip activeColumn={activeColumn} onSelectColumn={handleColumnChange} summary={summary} />
           </div>
 
-          <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-3 min-[1800px]:grid-cols-[minmax(1040px,1fr)_400px]">
-            <section className="grid min-h-0 min-w-0 grid-cols-1 gap-3 xl:grid-cols-[360px_minmax(0,1fr)] 2xl:grid-cols-[380px_minmax(0,1fr)]">
-              <QueuePanel
-                activeColumn={activeColumn}
-                alertFilter={alertFilter}
-                onAlertFilterChange={setAlertFilter}
-                onClearFilters={handleResetQueueFilters}
-                onColumnChange={handleColumnChange}
-                onOwnerFilterChange={setOwnerFilter}
-                onSearchChange={setSearchTerm}
-                onSelectShipment={handleSelectShipment}
-                ownerFilter={ownerFilter}
-                ownerOptions={ownerOptions}
-                recordsForColumn={recordsForColumn}
-                searchTerm={searchTerm}
-                selectedShipmentId={selectedShipment.id}
-                visibleShipments={visibleShipments}
+          <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-3 min-[1500px]:grid-cols-[minmax(300px,360px)_minmax(0,1fr)_minmax(360px,400px)]">
+            <QueuePanel
+              activeColumn={activeColumn}
+              alertFilter={alertFilter}
+              onAlertFilterChange={setAlertFilter}
+              onClearFilters={handleResetQueueFilters}
+              onColumnChange={handleColumnChange}
+              onOwnerFilterChange={setOwnerFilter}
+              onSearchChange={setSearchTerm}
+              onSelectShipment={handleSelectShipment}
+              ownerFilter={ownerFilter}
+              ownerOptions={ownerOptions}
+              recordsForColumn={recordsForColumn}
+              searchTerm={searchTerm}
+              selectedShipmentId={selectedShipment.id}
+              visibleShipments={visibleShipments}
+            />
+
+            <section className="grid min-h-0 min-w-0 grid-cols-1 gap-3 xl:grid-rows-[auto_auto_minmax(0,1fr)]">
+              <ShipmentDetailPanel
+                aiSummary={selectedShipment.aiSummary}
+                batchNo={selectedShipment.batchNo}
+                containerNo={selectedShipment.containerNo}
+                cutoffBadgeClassName={toneClass(cutoffTone(selectedShipment.hoursToCutoff))}
+                cutoffLabel={`截补料 ${selectedShipment.hoursToCutoff}h`}
+                detailItems={shipmentHeaderItems}
+                nextAction={selectedShipment.nextAction}
+                soNo={selectedShipment.soNo}
+                status={selectedShipment.status}
+                statusLevel={selectedShipmentLevel}
+                vesselVoyage={selectedShipment.vesselVoyage}
               />
 
-              <div className="grid min-h-0 min-w-0 grid-cols-1 gap-3 xl:grid-rows-[auto_auto_minmax(0,1fr)]">
-                <ShipmentDetailPanel
-                  aiSummary={selectedShipment.aiSummary}
-                  batchNo={selectedShipment.batchNo}
-                  containerNo={selectedShipment.containerNo}
-                  cutoffBadgeClassName={toneClass(cutoffTone(selectedShipment.hoursToCutoff))}
-                  cutoffLabel={`截补料 ${selectedShipment.hoursToCutoff}h`}
-                  detailItems={shipmentHeaderItems}
-                  nextAction={selectedShipment.nextAction}
-                  soNo={selectedShipment.soNo}
-                  status={selectedShipment.status}
-                  statusLevel={selectedShipmentLevel}
-                  vesselVoyage={selectedShipment.vesselVoyage}
-                />
+              <ShipmentFieldPanel
+                fieldItems={fieldItems}
+                progressItems={documentProgressItems}
+                reminders={reminderChips}
+              />
 
-                <ShipmentFieldPanel
-                  fieldItems={fieldItems}
-                  progressItems={documentProgressItems}
-                  reminders={reminderChips}
-                />
-
-                <div className="grid min-h-0 min-w-0 grid-cols-1 gap-3">
-                  <ShipmentActionPanel
-                    actionItems={actionPanelItems}
-                    nextAction={selectedShipment.nextAction}
-                    onFollowUp={() => handleAction("催单提醒")}
-                    onRunRecommended={() => handleAction(recommendedActionCard.label)}
-                    recommendedAction={{
-                      detail: recommendedActionCard.detail,
-                      label: recommendedActionCard.label,
-                      status: recommendedActionCard.status,
-                      statusClassName: toneClass(progressTone(recommendedActionCard.status)),
-                    }}
-                  />
-
-                  <BookingPlanPanel
-                    generating={bookingDraftGenerating}
-                    onGenerateDrafts={() => void handleBatchGenerateBookingDrafts()}
-                    onTogglePlan={handleToggleBookingPlan}
-                    plans={bookingPlans}
-                    selectedIds={selectedBookingPlanIds}
-                  />
-
-                  <EmailRecognitionPanel
-                    items={emailRecognitions}
-                    onReview={(id, action) => void handleReviewEmailRecognition(id, action)}
-                    onSync={() => void handleRunEmailSync()}
-                    reviewingId={reviewingEmailRecognitionId}
-                    syncing={emailSyncing}
-                  />
-
-                </div>
-              </div>
+              <ShipmentActionPanel
+                actionItems={actionPanelItems}
+                nextAction={selectedShipment.nextAction}
+                onFollowUp={() => handleAction("催单提醒")}
+                onRunRecommended={() => handleAction(recommendedActionCard.label)}
+                recommendedAction={{
+                  detail: recommendedActionCard.detail,
+                  label: recommendedActionCard.label,
+                  status: recommendedActionCard.status,
+                  statusClassName: toneClass(progressTone(recommendedActionCard.status)),
+                }}
+              />
             </section>
 
-            <AiCopilotPanel
-              aiInput={aiInput}
-              aiLastCompletedAt={aiLastCompletedAt}
-              aiLastPrompt={aiLastPrompt}
-              aiLastReplyLength={aiLastReplyLength}
-              aiReply={aiReply}
-              aiRequestState={aiRequestState}
-              onAiInputChange={setAiInput}
-              onAiInputKeyDown={handleAiInputKeyDown}
-              onQuickPrompt={(prompt) => {
-                setAiInput(prompt);
-                void sendToAi(prompt);
-              }}
-              onResetPrompt={() => setAiInput(quickPrompts[0])}
-              onSend={() => void sendToAi(aiInput)}
-              selectedShipment={selectedShipment}
-            />
+            <aside className="grid min-h-0 min-w-0 grid-cols-1 gap-3 content-start">
+              <section className="rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm shadow-slate-200/30">
+                <div>
+                  <p className="text-sm font-semibold text-slate-950">机器人中台</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">订舱草稿、邮件识别和人工确认写回集中处理。</p>
+                </div>
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                    <p className="text-[11px] text-slate-500">待发计划</p>
+                    <p className="mt-1 text-lg font-semibold text-slate-950">{robotHubMetrics.bookingPlans}</p>
+                  </div>
+                  <div className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2">
+                    <p className="text-[11px] text-cyan-700">待审邮件</p>
+                    <p className="mt-1 text-lg font-semibold text-cyan-950">{robotHubMetrics.emailRecognitions}</p>
+                  </div>
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                    <p className="text-[11px] text-red-700">异常邮件</p>
+                    <p className="mt-1 text-lg font-semibold text-red-950">{robotHubMetrics.exceptionEmails}</p>
+                  </div>
+                </div>
+              </section>
+
+              <BookingPlanPanel
+                generating={bookingDraftGenerating}
+                onGenerateDrafts={() => void handleBatchGenerateBookingDrafts()}
+                onTogglePlan={handleToggleBookingPlan}
+                plans={bookingPlans}
+                selectedIds={selectedBookingPlanIds}
+              />
+
+              <EmailRecognitionPanel
+                items={emailRecognitions}
+                onReview={(id, action) => void handleReviewEmailRecognition(id, action)}
+                onSync={() => void handleRunEmailSync()}
+                reviewingId={reviewingEmailRecognitionId}
+                syncing={emailSyncing}
+              />
+
+              <AiCopilotPanel
+                aiInput={aiInput}
+                aiLastCompletedAt={aiLastCompletedAt}
+                aiLastPrompt={aiLastPrompt}
+                aiLastReplyLength={aiLastReplyLength}
+                aiReply={aiReply}
+                aiRequestState={aiRequestState}
+                onAiInputChange={setAiInput}
+                onAiInputKeyDown={handleAiInputKeyDown}
+                onQuickPrompt={(prompt) => {
+                  setAiInput(prompt);
+                  void sendToAi(prompt);
+                }}
+                onResetPrompt={() => setAiInput(quickPrompts[0])}
+                onSend={() => void sendToAi(aiInput)}
+                selectedShipment={selectedShipment}
+              />
+            </aside>
           </div>
         </section>
       </div>
