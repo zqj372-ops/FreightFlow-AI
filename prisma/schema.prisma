@@ -94,6 +94,49 @@ enum EmailRecipientType {
   CC  @map("cc")
 }
 
+enum EmailMessageSyncStatus {
+  NEW     @map("new")
+  PARSED  @map("parsed")
+  FAILED  @map("failed")
+}
+
+enum BookingPlanStatus {
+  MISSING_INFO   @map("missing_info")
+  READY_TO_DRAFT @map("ready_to_draft")
+  DRAFT_READY    @map("draft_ready")
+  SEND_FAILED    @map("send_failed")
+  SENT           @map("sent")
+}
+
+enum EmailDraftType {
+  BOOKING    @map("booking")
+  FOLLOW_UP  @map("follow_up")
+  SUPPLEMENT @map("supplement")
+}
+
+enum EmailDraftStatus {
+  DRAFT          @map("draft")
+  PENDING_REVIEW @map("pending_review")
+  SENT           @map("sent")
+  FAILED         @map("failed")
+}
+
+enum EmailRecognitionType {
+  SO_RECEIVED          @map("SO_RECEIVED")
+  BOOKING_REPLY        @map("BOOKING_REPLY")
+  SUPPLEMENT_CONFIRMED @map("SUPPLEMENT_CONFIRMED")
+  FOLLOW_UP_REPLY      @map("FOLLOW_UP_REPLY")
+  EXCEPTION            @map("EXCEPTION")
+  UNKNOWN              @map("UNKNOWN")
+}
+
+enum EmailRecognitionStatus {
+  PENDING_REVIEW @map("pending_review")
+  CONFIRMED      @map("confirmed")
+  REJECTED       @map("rejected")
+  IGNORED        @map("ignored")
+}
+
 model Shipment {
   id                   String                   @id @db.VarChar(64)
   batchNo              String                   @unique @db.VarChar(64)
@@ -130,6 +173,9 @@ model Shipment {
   reminderFlags        ShipmentReminderFlag[]
   actionLogs           ShipmentActionLog[]
   emailLogs            ShipmentEmailLog[]
+  bookingPlan          BookingPlan?
+  emailDrafts          EmailDraft[]
+  recognitions         EmailRecognitionResult[]
 
   @@index([status])
   @@index([operator])
@@ -249,4 +295,93 @@ model AiRequest {
   @@index([shipmentId, createdAt])
   @@index([requestStatus])
   @@map("ai_requests")
+}
+
+model EmailMessage {
+  id           String                 @id @default(cuid())
+  messageId    String                 @unique @db.VarChar(255)
+  threadId     String?                @db.VarChar(255)
+  from         String                 @db.VarChar(255)
+  to           Json
+  cc           Json
+  subject      String                 @db.VarChar(255)
+  receivedAt   DateTime
+  mailbox      String                 @default("INBOX") @db.VarChar(128)
+  bodyText     String                 @db.Text
+  bodySummary  String                 @db.Text
+  attachments  Json
+  syncStatus   EmailMessageSyncStatus @default(NEW)
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  recognitions EmailRecognitionResult[]
+
+  @@index([receivedAt])
+  @@index([syncStatus])
+  @@map("email_messages")
+}
+
+model EmailRecognitionResult {
+  id                String                 @id @default(cuid())
+  emailMessageId    String
+  matchedShipmentId String?                @db.VarChar(64)
+  confidence        Float
+  recognitionType   EmailRecognitionType
+  extractedFields   Json
+  summary           String                 @db.Text
+  riskFlags         Json
+  status            EmailRecognitionStatus @default(PENDING_REVIEW)
+  reviewedBy        String?                @db.VarChar(128)
+  reviewedAt        DateTime?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  emailMessage      EmailMessage           @relation(fields: [emailMessageId], references: [id], onDelete: Cascade)
+  matchedShipment   Shipment?              @relation(fields: [matchedShipmentId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([matchedShipmentId, createdAt])
+  @@map("email_recognition_results")
+}
+
+model BookingPlan {
+  id                     String        @id @default(cuid())
+  shipmentId             String        @unique @db.VarChar(64)
+  planStatus             BookingPlanStatus
+  requiredFieldsSnapshot Json
+  preferredBookingAgent  String?       @db.VarChar(128)
+  plannedSendAt          DateTime?
+  lastDraftId            String?
+  lastError              String?       @db.Text
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+  shipment               Shipment      @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  lastDraft              EmailDraft?   @relation("BookingPlanLastDraft", fields: [lastDraftId], references: [id], onDelete: SetNull)
+  drafts                 EmailDraft[]  @relation("BookingPlanDrafts")
+
+  @@index([planStatus])
+  @@index([plannedSendAt])
+  @@map("booking_plans")
+}
+
+model EmailDraft {
+  id                String         @id @default(cuid())
+  shipmentId        String         @db.VarChar(64)
+  draftType         EmailDraftType
+  to                Json
+  cc                Json
+  subject           String         @db.VarChar(255)
+  body              String         @db.Text
+  attachments       Json
+  status            EmailDraftStatus
+  createdFromPlanId String?
+  lastError         String?        @db.Text
+  sentEmailLogId    String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  shipment          Shipment       @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  createdFromPlan   BookingPlan?   @relation("BookingPlanDrafts", fields: [createdFromPlanId], references: [id], onDelete: SetNull)
+  currentForPlans   BookingPlan[]  @relation("BookingPlanLastDraft")
+
+  @@index([shipmentId, status])
+  @@index([draftType, status])
+  @@map("email_drafts")
 }

@@ -714,3 +714,101 @@ type ShipmentRecord = {
   - `npx tsc --noEmit --incremental false` 通过
   - `npm test` 通过,4 个测试文件 / 29 个用例
   - `npm run build` 通过
+
+## Track A — Repository data layer (feat/repositories-data-layer)
+
+> 强制 push 到独立 feature 分支,从 main 拉,不合并 phase-1。
+> 此节追加在 2026-06-14,反映 Track A 仓储层重构。
+
+### 1. 目标
+
+把 mock-data 抽到仓储层,mock + prisma 双 adapter,无 DB 走 mock,
+重构 3 个 API 路由走仓储接口,5 个事务型 service 路由保持不动。
+
+### 2. 目录结构
+
+```
+src/lib/repositories/
+├── booking-plan-repository.ts          # interface + types
+├── contact-repository.ts               # interface + types
+├── email-draft-repository.ts           # interface + types
+├── email-message-repository.ts         # interface + types
+├── email-recognition-repository.ts     # interface + types
+├── shipment-repository.ts              # interface + types
+├── types.ts                            # 共享 enum (BookingPlanStatus / EmailDraftStatus / ...)
+├── index.ts                            # 工厂 + 桶出口
+├── mock/
+│   ├── mock-store.ts                   # 共享 in-memory store + seed
+│   ├── index.ts                        # 桶出口
+│   ├── booking-plan-repository.ts
+│   ├── contact-repository.ts
+│   ├── email-draft-repository.ts
+│   ├── email-message-repository.ts
+│   ├── email-recognition-repository.ts
+│   └── shipment-repository.ts
+├── prisma/
+│   ├── booking-plan-repository.ts
+│   ├── contact-repository.ts
+│   ├── email-draft-repository.ts
+│   ├── email-message-repository.ts
+│   ├── email-recognition-repository.ts
+│   └── shipment-repository.ts
+└── __tests__/                          # 7 个 vitest 文件
+    ├── booking-plan-repository.test.ts
+    ├── contact-repository.test.ts
+    ├── email-draft-repository.test.ts
+    ├── email-message-repository.test.ts
+    ├── email-recognition-repository.test.ts
+    ├── factory.test.ts
+    └── shipment-repository.test.ts
+```
+
+### 3. 工厂选择逻辑
+
+`getRepositories()` 行为:
+
+1. 若 `process.env.DATABASE_URL` 未配置 → 直接走 mock bundle
+2. 配置了 → 调用 `prisma.$queryRaw\`SELECT 1\`` 探活
+3. 探活成功 → 走 prisma bundle
+4. 探活失败且错误码被 `isPrismaUnavailable` 识别 → 降级到 mock bundle
+5. 探活失败且是其他错误(权限/语法) → 抛出,不静默降级
+
+bundle 用 `cached` 变量在单次 Node 进程内只构建一次,日志 `[repositories] using
+<mode> data layer` 在构建时打印一次。`__resetRepositoryCache()` 仅供测试用。
+
+### 4. 路由重构
+
+| 路由 | 重构前 | 重构后 |
+| --- | --- | --- |
+| `GET /api/shipments` | `listShipmentsFromDatabase()` + 手动 catch prisma unavailable | `repos.shipments.list()` (factory 自动选) |
+| `GET /api/shipments/[id]` | `getShipmentFromDatabase(id)` + 手动 catch | `repos.shipments.getById(id)` |
+| `GET /api/email-recognitions` (新增) | 不存在 | `repos.emailRecognitions.listPending()` |
+
+5 个走 service 的路由(booking-plans/email-drafts)按原状保留,事务语义不变。
+
+### 5. Schema 增量(必要)
+
+main 上的 `prisma/schema.prisma` 只有 Shipment / Contact 等基础模型,没有
+BookingPlan / EmailDraft / EmailRecognitionResult。任务规格又要求"6 个
+prisma 适配器(@prisma/client)",所以在 schema 上做了最小必要增量:
+
+- 5 个 enum: `EmailMessageSyncStatus` / `BookingPlanStatus` / `EmailDraftType` /
+  `EmailDraftStatus` / `EmailRecognitionType` / `EmailRecognitionStatus`
+- 3 个 model: `EmailMessage` / `EmailRecognitionResult` / `BookingPlan` / `EmailDraft`
+- 在 `Shipment` 上加了 `bookingPlan` / `emailDrafts` / `recognitions` 反向关系
+
+prisma 适配器在 `isPrismaUnavailable` 时会走 in-memory fallback,这样
+prisma bundle 的方法签名不会因为 DB 不可达而抛错,保证 mock 路径在两种
+bundle 下行为一致。
+
+### 6. 测试
+
+- 7 个测试文件 / 62 个用例,全部通过
+- 每个 repo 至少 3 个核心方法测试(list / getByX / 写入)
+- factory 测试覆盖 4 个分支:无 DATABASE_URL / 缓存复用 / 探活失败降级 / 探活成功升级
+
+### 7. 验证
+
+- `npx tsc --noEmit` 通过(无错误)
+- `npx vitest run` 通过(11 个文件 / 62 个用例)
+- `git push` 到 `origin/feat/repositories-data-layer`,`ls-remote` 可见
