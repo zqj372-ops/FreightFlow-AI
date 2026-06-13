@@ -2,7 +2,61 @@
 
 最后更新：2026-06-14
 当前分支：`codex/booking-plans-phase-1`
-最新提交：`6f28469 fix: compact tracking cards and edit on click`
+最新提交：待本次提交更新
+
+## 0. 2026-06-14 本次交接更新
+
+### 2026-06-14 · Track B · IMAP 真拉信 + 邮件同步状态机
+
+- **目标**:`/api/email-sync/run` 从 mock-only 切换为真 IMAP 拉信并实现完整的状态机。`runSync` 在无 IMAP 配置时仍然能跑通(走 `MockEmailPullProvider`)。
+- **改动文件**:
+  - `src/lib/services/email/types.ts` — 新增 `EmailPullProvider`、`EmailMessageMetadata`、`EmailMessageFull`、`EmailSearchOptions`、`SyncReport`、`SyncReportError`、`RunSyncOptions`。原 `EmailProvider`(send) 类型保持不变。
+  - `src/lib/services/email/imap-pull-provider.ts` — 新增 `ImapPullProvider`,基于 `imapflow` 真实 `search` + `fetch`,支持 `since` 增量、`limit` 裁剪、mailbox 选择。注入式 `factory` 便于测试。
+  - `src/lib/services/email/mock-pull-provider.ts` — 新增 `MockEmailPullProvider`,3 条固定 fixture,提供 `search` / `fetchFull`。
+  - `src/lib/services/email/email-service.ts` — 新增 `runSync(options, deps?)`、`createPullProvider`、`defaultTriggerRecognition`、`drainInMemorySyncFailures`。原有 `sendShipmentEmail` / `listShipmentEmailLogs` 等发送侧 API 不变。
+  - `src/app/api/email-sync/run/route.ts` — 改为接受 `POST { mailbox?, limit?, fullSync? }`,返回 `SyncReport` JSON;鉴权留待后续 Track。
+  - `src/lib/services/email/email-service.test.ts` — 新增 10 个用例,覆盖 5 大场景:mock happy-path、dedupe(已存在 + 唯一约束冲突)、provider 抛错(search/fetch/persist 三类)、syncStatus 状态机 NEW→PARSED、config fallback。
+  - `.env.example` — 在 `IMAP_*` 字段后追加 pull-sync 行为说明。
+- **SyncReport 字段**:
+  ```ts
+  type SyncReport = {
+    provider: string;            // "imap" | "mock-pull" | "stub-pull" | "unknown"
+    scanned: number;             // provider.search 返回的元数据条数
+    fetched: number;             // 成功 fetchFull 的条数
+    newInserted: number;         // 写入 EmailMessage(syncStatus=NEW) 的条数
+    duplicatesSkipped: number;   // 已存在 messageId 的条数
+    errorCount: number;          // errors[].length 的快速读取
+    startedAt: string;           // ISO 8601
+    finishedAt: string;          // ISO 8601
+    errors: SyncReportError[];   // { code, message, messageId?, stage }
+  };
+  ```
+- **状态机**(沿用 schema `EmailMessageSyncStatus`):
+  ```
+  search → fetch → persist (NEW) → trigger → PARSED → [Track M3] QUEUED → CONFIRMED/IGNORED/FAILED
+  ```
+  - `defaultTriggerRecognition` 当前只把 `syncStatus` 切到 `PARSED`,Track M3 接入真正的分类器后,该 hook 会顺接 `QUEUED`。
+  - FAILED 落库路径:DB schema 当前没有 `errorMessage` 列,失败记录先入 `inMemorySyncFailures` 并打 `DB column missing - TODO` 标记;后续 schema 升级再补字段(本轮不改 schema)。
+- **Provider 选择策略**:
+  - `.freightflow/email-config.json` 存在且 `enabled=true` 且 `imapHost + username + password` 齐全 → `ImapPullProvider`。
+  - 否则读取 `IMAP_HOST + SMTP_USERNAME + SMTP_PASSWORD` env → `ImapPullProvider`。
+  - 以上均不满足 → `MockEmailPullProvider`(dev/test 默认)。
+  - **真实 IMAP 拉信失败必须显式报错**,严禁 silently 回退到 mock(provider 异常直接 throw 到 `runSync` 顶层,route 渲染 5xx)。
+- **增量同步**:`runSync` 默认 `fullSync=false`,会查 `EmailMessage.findFirst({ orderBy: receivedAt desc })` 取最近一封 `receivedAt` 作为 `since` 过滤;`fullSync=true` 时跳过 `since` 拉整 INBOX。
+- **测试**:`npm test` 现有 9 文件 / 66 用例 + 新增 1 文件 / 10 用例 = 10 文件 / 76 用例全部通过,新增文件 0 TS strict 错误;`npx tsc --noEmit` 中所有新增/修改文件无报错(预存在的 13 条报错位于 `src/components/workbench-shell.tsx` 与 `email-recognition-service.test.ts`,不在本 Track 范围)。
+- **交付门**:Track B 交付不依赖 Track A(repositories/)。`runSync` 直接走 `prisma.emailMessage.*`;`repositories/` 后续 Track 接入时只需替换该层。
+
+
+
+- 已确认正确 GitHub 远程仓库为 `https://github.com/zqj372-ops/FreightFlow-AI.git`;`NEW-FR-AI.git` 是用户的另一个项目,不得继续推送本项目代码。
+- 已将用户提供的《货代自动订舱系统 · 设计文档》纳入仓库:[product-design.md](./product-design.md)。
+- 已同步更新产品定位:FreightFlow AI 是货代自动化作业系统的 AI 工作台与自动化机器人中枢,目标是把货代日常 70% 的“催、抄、录、查”交给系统完成。
+- 已更新 [project-overview.md](./project-overview.md)、[business-rules.md](./business-rules.md)、[master-plan.md](./master-plan.md)、[todo.md](./todo.md) 和 README,把订舱、SO识别、补料、柜子跟踪、报关/清关、派送、财务识别的产品规划写入稳定文档。
+- 已启动两个智能体并完成只读分析:
+  - 产品文档智能体:梳理产品定位、模块、流程和应写入仓库的文档结构。
+  - UI 结构智能体:确认当前队列卡片应改为“异常优先的订舱操作行卡”,完整字段保留在详情弹窗。
+- 已将队列卡片从“全量资料卡”调整为“操作队列行卡”:卡片只展示批次、状态、负责人、航线、船名航次、柜号、SO、订舱代理、单证状态、最近截止、ETD、件毛体、下一步和推荐动作;发货人/收货人/通知方/拖车行/报关行/完整截单截重截关等字段放回详情弹窗编辑。
+- 已把 `.opencode/` 加入 `.gitignore`,避免本地工具目录和 node_modules 被误提交。
 
 ## 1. 已完成功能
 
