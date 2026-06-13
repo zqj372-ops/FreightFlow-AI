@@ -199,6 +199,16 @@ describe("buildBookingTrackingCard", () => {
       { label: "截关", value: "-" },
     ]);
   });
+
+  it("builds preview-style identity, party, and remark fields", () => {
+    const card = buildBookingTrackingCard(shipments[0]);
+
+    expect(card.routeSummary).toBe("Yantian → Vancouver · 40HQ · OOCL");
+    expect(card.shipper).toBe("GUANGDONG WUYOU SUPPLY CHAIN CO.,LTD");
+    expect(card.consignee).toBe("TULE TECHNOLOGY CO., LIMITED");
+    expect(card.notifyParty).toBe("VALUEWAY GLOBAL LOGISTICS INC.");
+    expect(card.remark).toBe(shipments[0].nextAction);
+  });
 });
 
 describe("buildShipmentStatusEditDraft", () => {

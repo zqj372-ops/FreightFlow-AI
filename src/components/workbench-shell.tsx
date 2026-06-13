@@ -1,22 +1,35 @@
 import {
+  AlarmClock,
+  BellRing,
+  Building2,
+  CalendarDays,
   CircleAlert,
   CircleX,
+  Clock,
   Clock3,
+  Container,
+  Copy,
   FileSearch,
   FilePlus2,
   FileText,
   Filter,
+  Flag,
   LayoutDashboard,
   Mail,
+  MapPin,
+  Package,
   RefreshCw,
   ScanSearch,
   Search,
   Settings2,
   ShieldCheck,
+  Ship,
   ShipWheel,
   TriangleAlert,
   UserRound,
+  UserRoundCheck,
 } from "lucide-react";
+import type { ReactNode } from "react";
 import { buildBookingTrackingCard } from "@/features/freightflow/page-helpers";
 import {
   getAlertLevel,
@@ -129,12 +142,101 @@ function levelDot(level: AlertLevel) {
   return "bg-emerald-500";
 }
 
-function TrackingField({ label, value }: { label: string; value: string }) {
+function copyText(value: string) {
+  if (!value || value === "-") return;
+
+  if (navigator.clipboard?.writeText) {
+    void navigator.clipboard.writeText(value);
+  }
+}
+
+function TrackingCopyButton({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 border-r border-b border-cyan-100 px-2.5 py-2 last:border-r-0">
-      <p className="text-[10px] font-medium leading-4 text-slate-500">{label}</p>
-      <p className="mt-0.5 truncate text-[11px] font-semibold leading-4 text-slate-900">{value}</p>
+    <button
+      type="button"
+      aria-label={label}
+      onClick={(event) => {
+        event.stopPropagation();
+        copyText(value);
+      }}
+      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-blue-50 hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60"
+    >
+      <Copy className="h-3.5 w-3.5" />
+    </button>
+  );
+}
+
+function TimelineChip({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-blue-100 bg-white/90 px-2 py-1 shadow-sm shadow-blue-100/40">
+      <span className="shrink-0 text-blue-600">{icon}</span>
+      <span className="text-[10px] font-extrabold text-blue-600">{label}</span>
+      <span className="truncate text-[10px] font-bold tabular-nums text-slate-900">{value}</span>
+    </span>
+  );
+}
+
+function TopTrackingField({
+  copyLabel,
+  label,
+  queryUrl,
+  value,
+}: {
+  copyLabel?: string;
+  label: string;
+  queryUrl?: string;
+  value: string;
+}) {
+  const valueContent = queryUrl ? (
+    <a
+      href={queryUrl}
+      target="_blank"
+      rel="noreferrer"
+      onClick={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+      className="truncate text-[19px] font-extrabold leading-6 text-slate-950 underline-offset-2 hover:text-blue-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60"
+    >
+      {value}
+    </a>
+  ) : (
+    <span className="truncate text-[19px] font-extrabold leading-6 text-slate-950">{value}</span>
+  );
+
+  return (
+    <div className="min-w-0 border-b border-blue-100 px-3 py-3 sm:border-b-0 sm:border-r sm:last:border-r-0">
+      <p className="text-xs font-extrabold text-blue-700">{label}</p>
+      <div className="mt-1.5 flex min-w-0 items-center gap-1.5">
+        {valueContent}
+        {copyLabel ? <TrackingCopyButton label={copyLabel} value={value} /> : null}
+      </div>
     </div>
+  );
+}
+
+function PreviewInfoItem({
+  icon,
+  label,
+  value,
+  wide = false,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: ReactNode;
+  wide?: boolean;
+}) {
+  return (
+    <article className={cx(
+      "flex min-w-0 items-center gap-2.5 rounded-lg border border-blue-100 bg-white px-3 py-3 shadow-sm shadow-blue-100/30",
+      wide ? "sm:col-span-2 xl:col-span-4" : "xl:col-span-2",
+    )}>
+      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+        {icon}
+      </span>
+      <div className="min-w-0">
+        <p className="text-[11px] font-extrabold leading-4 text-blue-700">{label}</p>
+        <div className="mt-1 truncate text-sm font-extrabold leading-5 text-slate-950">{value}</div>
+      </div>
+    </article>
   );
 }
 
@@ -665,90 +767,85 @@ export function QueuePanel({
                     onSelectShipment(shipment.id);
                   }}
                   className={cx(
-                    "relative w-full cursor-pointer rounded-lg border px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60 sm:px-3.5",
+                    "relative w-full cursor-pointer overflow-hidden rounded-[18px] border text-left shadow-[0_14px_36px_rgba(31,75,126,0.12)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60",
                     selected
-                      ? "border-cyan-600 bg-cyan-50/80 shadow-sm shadow-cyan-100"
-                      : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50",
+                      ? "border-blue-500 bg-white"
+                      : "border-blue-100 bg-white hover:border-blue-200",
                   )}
                 >
-                  {selected ? <span className="absolute inset-y-3 left-0 w-1 rounded-r-full bg-cyan-600" /> : null}
+                  {selected ? <span className="absolute inset-y-4 left-0 z-10 w-1 rounded-r-full bg-blue-600" /> : null}
 
-                  <div className="flex flex-wrap items-center justify-between gap-2 pl-1">
-                    <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <p className="break-words text-sm font-semibold text-blue-700">{trackingCard.batchNo}</p>
-                      {trackingCard.cutoffPills.map((pill) => (
-                        <span key={pill.label} className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
-                          {pill.label} {pill.value}
-                        </span>
-                      ))}
+                  <div className="grid gap-3 border-b border-blue-100 bg-[linear-gradient(90deg,rgba(231,240,255,0.92),rgba(255,255,255,0.95)_54%)] px-3.5 py-3.5 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="hidden h-12 w-12 shrink-0 place-items-center rounded-xl border border-blue-100 bg-white text-blue-600 shadow-sm shadow-blue-100/70 sm:grid">
+                        <Ship className="h-6 w-6" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
+                          <p className="truncate text-xl font-black leading-7 text-slate-950">{trackingCard.batchNo}</p>
+                          <TrackingCopyButton label="复制批次号" value={trackingCard.batchNo} />
+                          <span
+                            className={cx(
+                              "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-extrabold",
+                              levelBadge(level),
+                            )}
+                          >
+                            <span className={cx("h-2 w-2 rounded-full", levelDot(level))} />
+                            {trackingCard.status}
+                          </span>
+                        </div>
+                        <p className="mt-1 truncate text-[13px] font-semibold text-slate-500">{trackingCard.routeSummary}</p>
+                      </div>
                     </div>
 
-                    <span
-                      className={cx(
-                        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-[11px] font-medium",
-                        levelBadge(level),
-                      )}
-                    >
-                      <span className={cx("h-1.5 w-1.5 rounded-full", levelDot(level))} />
-                      {trackingCard.status}
-                    </span>
-                  </div>
-
-                  <div className="mt-2 grid grid-cols-1 gap-2 rounded-lg bg-cyan-50/70 px-2.5 py-2 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,0.9fr)]">
-                    <div className="min-w-0 border-r border-cyan-100 pr-2">
-                      <p className="text-[10px] leading-4 text-cyan-700">柜号</p>
-                      <a
-                        href={trackingCard.queryUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={(event) => event.stopPropagation()}
-                        onDoubleClick={(event) => event.stopPropagation()}
-                        className="mt-0.5 block truncate text-lg font-semibold leading-6 text-slate-950 underline-offset-2 hover:text-cyan-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60"
-                      >
-                        {trackingCard.containerNo}
-                      </a>
-                    </div>
-                    <div className="min-w-0 border-r border-cyan-100 pr-2">
-                      <p className="text-[10px] leading-4 text-cyan-700">SO号</p>
-                      <a
-                        href={trackingCard.queryUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={(event) => event.stopPropagation()}
-                        onDoubleClick={(event) => event.stopPropagation()}
-                        className="mt-0.5 block truncate text-base font-semibold leading-6 text-slate-950 underline-offset-2 hover:text-cyan-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60"
-                      >
-                        {trackingCard.soNo}
-                      </a>
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-[10px] leading-4 text-slate-500">订舱代理</p>
-                      <p className="mt-0.5 truncate text-sm font-semibold leading-6 text-slate-800">{trackingCard.bookingAgent}</p>
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-[10px] leading-4 text-slate-500">海运费报价</p>
-                      <p className="mt-0.5 truncate text-sm font-semibold leading-6 text-slate-800">{trackingCard.oceanFreightPrice}</p>
+                    <div className="flex min-w-0 flex-wrap items-center gap-1.5 xl:justify-end">
+                      <TimelineChip icon={<CalendarDays className="h-3.5 w-3.5" />} label="截单时间" value={trackingCard.cutoffPills[0]?.value ?? "-"} />
+                      <span className="hidden text-sm font-black text-blue-300 sm:inline">→</span>
+                      <TimelineChip icon={<AlarmClock className="h-3.5 w-3.5" />} label="截重时间" value={trackingCard.cutoffPills[1]?.value ?? "-"} />
+                      <span className="hidden text-sm font-black text-blue-300 sm:inline">→</span>
+                      <TimelineChip icon={<FileText className="h-3.5 w-3.5" />} label="截关时间" value={trackingCard.cutoffPills[2]?.value ?? "-"} />
                     </div>
                   </div>
 
-                  <div className="mt-2 grid grid-cols-2 overflow-hidden rounded-lg border border-cyan-100 bg-white/70 text-[11px] text-slate-600 lg:grid-cols-6">
-                    <TrackingField label="柜型" value={trackingCard.containerType} />
-                    <TrackingField label="船名 / 航次" value={trackingCard.vesselVoyage} />
-                    <TrackingField label="件数 / 毛重 / 体积" value={trackingCard.packageWeightVolume} />
-                    <TrackingField label="截单时间" value={trackingCard.cutoffPills[0]?.value ?? "-"} />
-                    <TrackingField label="截重时间" value={trackingCard.cutoffPills[1]?.value ?? "-"} />
-                    <TrackingField label="截关时间" value={trackingCard.cutoffPills[2]?.value ?? "-"} />
-                    <TrackingField label="ETD" value={trackingCard.etd} />
-                    <TrackingField label="ETA" value={trackingCard.eta} />
-                    <TrackingField label="拖车行" value={trackingCard.truckingCompany} />
-                    <TrackingField label="报关行" value={trackingCard.customsBroker} />
-                    <div className="min-w-0 border-r border-b border-cyan-100 px-2.5 py-2">
-                      <p className="text-[10px] font-medium leading-4 text-slate-500">提单电放确认</p>
-                      <span className={cx("mt-1 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium", trackingCard.blTelexStatus.className)}>
-                        {trackingCard.blTelexStatus.label}
-                      </span>
+                  <div className="grid grid-cols-1 border-b border-blue-100 px-3.5 sm:grid-cols-2 xl:grid-cols-4">
+                    <TopTrackingField label="柜号" value={trackingCard.containerNo} copyLabel="复制柜号" queryUrl={trackingCard.queryUrl} />
+                    <TopTrackingField label="SO号" value={trackingCard.soNo} copyLabel="复制SO号" queryUrl={trackingCard.queryUrl} />
+                    <TopTrackingField label="订舱代理" value={trackingCard.bookingAgent} />
+                    <TopTrackingField label="海运费报价" value={trackingCard.oceanFreightPrice} />
+                  </div>
+
+                  <div className="m-3.5 rounded-2xl border border-blue-100 bg-gradient-to-b from-white to-slate-50/70 p-3.5 shadow-sm shadow-blue-100/40">
+                    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-12">
+                      <PreviewInfoItem icon={<Container className="h-5 w-5" />} label="柜型" value={trackingCard.containerType} />
+                      <PreviewInfoItem icon={<Ship className="h-5 w-5" />} label="船名 / 航次" value={trackingCard.vesselVoyage} wide />
+                      <PreviewInfoItem icon={<Package className="h-5 w-5" />} label="件数 / 毛重 / 体积" value={trackingCard.packageWeightVolume} wide />
+                      <PreviewInfoItem
+                        icon={<ShieldCheck className="h-5 w-5" />}
+                        label="提单电放确认"
+                        value={(
+                          <span className={cx("inline-flex min-h-7 max-w-full items-center truncate rounded-full border px-2.5 py-1 text-xs font-extrabold", trackingCard.blTelexStatus.className)}>
+                            {trackingCard.blTelexStatus.label}
+                          </span>
+                        )}
+                      />
+                      <PreviewInfoItem icon={<Flag className="h-5 w-5" />} label="当前状态" value={trackingCard.status} />
+                      <PreviewInfoItem icon={<Clock className="h-5 w-5" />} label="ETD" value={trackingCard.etd} wide />
+                      <PreviewInfoItem icon={<Clock className="h-5 w-5" />} label="ETA" value={trackingCard.eta} wide />
+                      <PreviewInfoItem icon={<MapPin className="h-5 w-5" />} label="拖车行" value={trackingCard.truckingCompany} wide />
+                      <PreviewInfoItem icon={<UserRound className="h-5 w-5" />} label="报关行" value={trackingCard.customsBroker} wide />
+                      <PreviewInfoItem icon={<Building2 className="h-5 w-5" />} label="发货人" value={trackingCard.shipper} wide />
+                      <PreviewInfoItem icon={<UserRoundCheck className="h-5 w-5" />} label="收货人" value={trackingCard.consignee} wide />
+                      <PreviewInfoItem icon={<BellRing className="h-5 w-5" />} label="通知方" value={trackingCard.notifyParty} wide />
                     </div>
-                    <TrackingField label="当前状态" value={trackingCard.status} />
+
+                    {trackingCard.remark !== "-" ? (
+                      <div className="mt-3 flex min-w-0 items-center gap-3 rounded-lg border border-blue-100 bg-slate-50 px-3 py-3">
+                        <FileText className="h-5 w-5 shrink-0 text-blue-600" />
+                        <span className="shrink-0 text-xs font-extrabold text-blue-700">备注</span>
+                        <span className="h-4 w-px shrink-0 bg-blue-100" />
+                        <span className="truncate text-sm font-semibold text-slate-700">{trackingCard.remark}</span>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               );

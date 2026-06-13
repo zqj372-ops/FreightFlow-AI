@@ -59,6 +59,7 @@ export type BookingTrackingCard = {
   batchNo: string;
   blTelexStatus: { className: string; label: string };
   bookingAgent: string;
+  consignee: string;
   containerNo: string;
   containerType: string;
   customsBroker: string;
@@ -68,8 +69,12 @@ export type BookingTrackingCard = {
   oceanFreightPrice: string;
   packageWeightVolume: string;
   queryUrl: string;
+  remark: string;
+  routeSummary: string;
+  shipper: string;
   soNo: string;
   status: string;
+  notifyParty: string;
   truckingCompany: string;
   vesselVoyage: string;
 };
@@ -302,11 +307,13 @@ export function buildBookingTrackingCard(shipment: ShipmentRecord): BookingTrack
   const vesselName = displayValue(shipment.vesselName?.trim() ? shipment.vesselName : fallbackVessel.vesselName);
   const voyageNo = displayValue(shipment.voyageNo?.trim() ? shipment.voyageNo : fallbackVessel.voyageNo);
   const soNo = shipment.soStatus === "待识别" && shipment.soNo.trim() ? "待代理回传" : displayValue(shipment.soNo);
+  const routeSummary = `${displayValue(shipment.originPort)} → ${displayValue(shipment.destinationPort)} · ${displayValue(shipment.containerType)} · ${displayValue(shipment.carrier)}`;
 
   return {
     batchNo: displayValue(shipment.batchNo),
     blTelexStatus: blTelexStatusBadge(shipment.blTelexStatus),
     bookingAgent: displayValue(shipment.bookingAgent),
+    consignee: "TULE TECHNOLOGY CO., LIMITED",
     containerNo: displayValue(shipment.containerNo),
     containerType: displayValue(shipment.containerType),
     customsBroker: displayValue(shipment.customsBroker),
@@ -320,8 +327,12 @@ export function buildBookingTrackingCard(shipment: ShipmentRecord): BookingTrack
     oceanFreightPrice: displayValue(shipment.oceanFreightPrice),
     packageWeightVolume: [displayValue(shipment.packages), displayValue(shipment.grossWeight), displayValue(shipment.cbm)].join(" / "),
     queryUrl: carrierTrackingUrl(shipment.carrier),
+    remark: displayValue(shipment.nextAction),
+    routeSummary,
+    shipper: "GUANGDONG WUYOU SUPPLY CHAIN CO.,LTD",
     soNo,
     status: displayValue(shipment.status),
+    notifyParty: "VALUEWAY GLOBAL LOGISTICS INC.",
     truckingCompany: displayValue(shipment.truckingCompany),
     vesselVoyage: `${vesselName} / ${voyageNo}`,
   };
