@@ -54,6 +54,7 @@ import {
   loadContactsFromApi,
   batchGenerateBookingDrafts,
   loadBookingPlansFromApi,
+  downloadShipmentDocumentFromApi,
   loadEmailDraftFromApi,
   loadEmailRecognitionsFromApi,
   loadEmailSettings,
@@ -762,6 +763,40 @@ export function FreightflowWorkbenchPage() {
     }
   }
 
+  async function handleDownloadBookingInstruction() {
+    try {
+      const result = await downloadShipmentDocumentFromApi({
+        kind: "booking-template",
+        shipment: {
+          ...selectedShipment,
+          bookingAgent: bookingWorkflowForm.bookingAgent,
+          carrier: bookingWorkflowForm.carrier,
+          containerType: bookingWorkflowForm.containerType,
+          destinationPort: bookingWorkflowForm.destinationPort,
+          etd: bookingWorkflowForm.etd,
+          originPort: bookingWorkflowForm.originPort,
+          pickupLocation: bookingWorkflowForm.pickupLocation,
+          returnLocation: bookingWorkflowForm.returnLocation,
+          vesselVoyage: bookingWorkflowForm.vesselVoyage,
+        },
+      });
+      setToast({ tone: "success", message: `托书已生成：${result.fileName}` });
+    } catch (error) {
+      setToast({
+        tone: "info",
+        message: error instanceof Error ? error.message : "托书生成失败",
+      });
+    }
+  }
+
+  async function handleDownloadSupplementTemplate(shipment = selectedShipment) {
+    const result = await downloadShipmentDocumentFromApi({
+      kind: "supplement-template",
+      shipment,
+    });
+    setToast({ tone: "success", message: `补料表已生成：${result.fileName}` });
+  }
+
   async function handleRunEmailSync() {
     if (emailSyncing) return;
 
@@ -948,15 +983,25 @@ export function FreightflowWorkbenchPage() {
         persistActionInBackground("催单提醒");
         break;
       case "补料文件":
-        updateShipment(
-          (shipment) => ({
-            ...shipment,
-            documentStatus: "已发送",
-            status: shipment.status === "待补料" ? "已发送补料" : shipment.status,
-          }),
-          "补料文件状态已推进",
-        );
-        persistActionInBackground("补料文件");
+        void (async () => {
+          try {
+            await handleDownloadSupplementTemplate(selectedShipment);
+            updateShipment(
+              (shipment) => ({
+                ...shipment,
+                documentStatus: "已发送",
+                status: shipment.status === "待补料" ? "已发送补料" : shipment.status,
+              }),
+              "补料文件已生成，状态已推进",
+            );
+            persistActionInBackground("补料文件");
+          } catch (error) {
+            setToast({
+              tone: "info",
+              message: error instanceof Error ? error.message : "补料表生成失败",
+            });
+          }
+        })();
         break;
       case "SO 识别":
         updateShipment(
@@ -1239,6 +1284,7 @@ export function FreightflowWorkbenchPage() {
                 onBackToQueue={() => setBookingWorkflowOpen(false)}
                 onChangeDraft={setBookingDraft}
                 onChangeForm={setBookingWorkflowForm}
+                onDownloadAttachment={() => void handleDownloadBookingInstruction()}
                 onGenerateDraft={() => void handleGenerateWorkflowDraft()}
                 onSendDraft={() => void handleSendWorkflowDraft()}
                 secondaryActionLabel="关闭"

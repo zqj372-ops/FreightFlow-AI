@@ -24,7 +24,7 @@ describe("buildBookingDraft", () => {
     expect(draft.to).toEqual(["seabay.logistics@freightflow.ai"]);
     expect(draft.cc).toEqual(["ops@freightflow.ai"]);
     expect(draft.subject).toBe("FF-CA-240610-A01 Booking Request | 40HQ | Yantian - Vancouver");
-    expect(draft.attachmentName).toBe("FF-CA-240610-A01-shipping-instruction.pdf");
+    expect(draft.attachmentName).toBe("FF-CA-240610-A01-托书.docx");
     expect(draft.body).toContain("Dear Seabay Logistics,");
     expect(draft.body).toContain("Carrier: OOCL");
     expect(draft.body).toContain("ETD: 2026-06-12 23:00");
@@ -328,7 +328,7 @@ describe("buildBookingPlanAttachmentPreview", () => {
   it("creates an attachment filename and human-readable booking request preview", () => {
     const preview = buildBookingPlanAttachmentPreview(shipments[0], buildBookingFormDraft(shipments[0]));
 
-    expect(preview.fileName).toBe("FF-CA-240610-A01-booking-request.html");
+    expect(preview.fileName).toBe("FF-CA-240610-A01-托书.docx");
     expect(preview.lines).toContain("批次号：FF-CA-240610-A01");
     expect(preview.lines).toContain("船公司：OOCL");
     expect(preview.lines).toContain("备注：请协助订舱并回传 SO / 放舱确认。");

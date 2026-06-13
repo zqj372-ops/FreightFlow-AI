@@ -60,7 +60,7 @@ describe("buildBookingDraftPlan", () => {
     expect(draft.subject).toBe("订舱申请｜FF-CA-240610-A01｜40HQ｜Yantian-Vancouver");
     expect(draft.to).toEqual(["seabay.logistics@freightflow.ai"]);
     expect(draft.cc).toEqual(["ops@freightflow.ai"]);
-    expect(draft.attachmentName).toBe("FF-CA-240610-A01-shipping-instruction.pdf");
+    expect(draft.attachmentName).toBe("FF-CA-240610-A01-托书.docx");
     expect(draft.body).toContain("您好，");
     expect(draft.body).toContain("请协助安排以下订舱");
     expect(draft.body).toContain("船公司：OOCL");

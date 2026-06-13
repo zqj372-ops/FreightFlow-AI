@@ -1,4 +1,4 @@
-import { CheckCircle2, FileText, MailCheck, Paperclip, Save, Send, ShipWheel } from "lucide-react";
+import { CheckCircle2, Download, FileText, MailCheck, Paperclip, Save, Send, ShipWheel } from "lucide-react";
 
 import type { ShipmentRecord } from "@/lib/mock-data";
 import type { BookingDraft, BookingFormDraft, BookingPlanAttachmentPreview } from "./page-helpers";
@@ -11,6 +11,7 @@ type BookingPlanWorkflowProps = {
   onBackToQueue: () => void;
   onChangeDraft: (draft: BookingDraft) => void;
   onChangeForm: (form: BookingFormDraft) => void;
+  onDownloadAttachment: () => void;
   onGenerateDraft: () => void;
   onSendDraft: () => void;
   secondaryActionLabel?: string;
@@ -55,6 +56,7 @@ export function BookingPlanWorkflow({
   onBackToQueue,
   onChangeDraft,
   onChangeForm,
+  onDownloadAttachment,
   onGenerateDraft,
   onSendDraft,
   secondaryActionLabel = "返回柜子队列",
@@ -154,7 +156,7 @@ export function BookingPlanWorkflow({
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-slate-950">附件预览</p>
-                <p className="mt-1 text-xs leading-5 text-slate-500">生成草稿时会把该附件名写入邮件草稿。</p>
+                <p className="mt-1 text-xs leading-5 text-slate-500">按托书模板生成 Word 附件，生成草稿时会写入邮件草稿。</p>
               </div>
               <Paperclip className="h-4 w-4 text-slate-500" />
             </div>
@@ -166,6 +168,15 @@ export function BookingPlanWorkflow({
                 ))}
               </div>
             </div>
+            <button
+              type="button"
+              onClick={onDownloadAttachment}
+              disabled={saving}
+              className="mt-3 inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+            >
+              <Download className="h-4 w-4" />
+              下载托书 Word
+            </button>
           </div>
         </div>
 

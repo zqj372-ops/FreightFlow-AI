@@ -43,6 +43,8 @@ export type EmailRecognitionReviewResult = {
   summary: string;
 };
 
+export type ShipmentDocumentKind = "booking-template" | "supplement-template";
+
 type ApiEnvelope<T> = {
   data?: T;
   error?: string;
@@ -129,6 +131,51 @@ export type EmailConnectionTest = {
 
 async function readJson<T>(response: Response) {
   return (await response.json().catch(() => ({}))) as ApiEnvelope<T>;
+}
+
+function fileNameFromDisposition(disposition: string | null, fallback: string) {
+  if (!disposition) return fallback;
+
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/)?.[1];
+  if (encoded) return decodeURIComponent(encoded);
+
+  const plain = disposition.match(/filename="?([^";]+)"?/)?.[1];
+  return plain ? plain.trim() : fallback;
+}
+
+export async function downloadShipmentDocumentFromApi({
+  kind,
+  shipment,
+}: {
+  kind: ShipmentDocumentKind;
+  shipment: ShipmentRecord;
+}) {
+  const response = await fetch(`/api/shipments/${encodeURIComponent(shipment.id)}/documents/${kind}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ shipment }),
+  });
+
+  if (!response.ok) {
+    const payload = await readJson<unknown>(response);
+    throw new Error(payload.error ?? "Failed to generate document.");
+  }
+
+  const blob = await response.blob();
+  const fileName = fileNameFromDisposition(
+    response.headers.get("Content-Disposition"),
+    kind === "booking-template" ? `${shipment.batchNo}-托书.docx` : `${shipment.batchNo}-补料-含vgm.xlsx`,
+  );
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+
+  return { fileName };
 }
 
 export async function loadShipmentsFromApi(): Promise<ApiLoadResult<ShipmentRecord[]>> {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getMockShipment, getShipmentFromDatabase, isPrismaUnavailable } from "@/lib/freightflow-data";
-import { generateSupplementTemplate } from "@/lib/services/documents/document-service";
+import { generateBookingInstructionDocument } from "@/lib/services/documents/document-service";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -23,8 +23,6 @@ function toArrayBuffer(content: Uint8Array) {
 export async function POST(request: NextRequest, context: RouteContext) {
   const { id: shipmentId } = await context.params;
   const body = (await request.json().catch(() => ({}))) as {
-    templateType?: unknown;
-    language?: unknown;
     shipment?: unknown;
   };
 
@@ -43,12 +41,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Shipment not found." }, { status: 404 });
   }
 
-  const result = await generateSupplementTemplate({
-    shipmentId,
-    templateType: body.templateType === "customer" ? "customer" : "agent",
-    language: body.language === "en" ? "en" : "zh-CN",
-    shipment,
-  });
+  const result = await generateBookingInstructionDocument({ shipment, shipmentId });
 
   return new NextResponse(new Blob([toArrayBuffer(result.content)], { type: result.mimeType }), {
     headers: downloadHeaders(result.fileName, result.mimeType),

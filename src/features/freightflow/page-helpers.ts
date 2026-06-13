@@ -467,7 +467,7 @@ export function buildBookingPlanAttachmentPreview(
   ];
 
   return {
-    fileName: `${shipment.batchNo}-booking-request.html`,
+    fileName: `${shipment.batchNo}-托书.docx`,
     html: [
       "<!doctype html>",
       '<html lang="zh-CN">',
@@ -532,7 +532,7 @@ export function buildBookingDraft(shipment: ShipmentRecord): BookingDraft {
     to: [formatFreightFlowEmail(shipment.bookingAgent)],
     cc: ["ops@freightflow.ai"],
     subject: `${shipment.batchNo} Booking Request | ${shipment.containerType} | ${shipment.originPort} - ${shipment.destinationPort}`,
-    attachmentName: `${shipment.batchNo}-shipping-instruction.pdf`,
+    attachmentName: `${shipment.batchNo}-托书.docx`,
     body: [
       `Dear ${shipment.bookingAgent},`,
       "",

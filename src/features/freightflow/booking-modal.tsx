@@ -433,7 +433,7 @@ export function BookingModal({
               </div>
 
               <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
-                当前流程已覆盖收件人、主题、正文、通讯录和发送确认。附件仍为占位状态，下一步适合接托书上传、模板生成与 SMTP 真发送。
+                当前流程已覆盖收件人、主题、正文、通讯录和发送确认。托书附件可在新建订舱计划弹窗中按模板生成并下载。
               </div>
 
               <div className="mt-4 grid gap-2 sm:flex">
