@@ -1,4 +1,4 @@
-import type { AlertLevel, ShipmentRecord } from "@/lib/mock-data";
+import type { AlertLevel, ShipmentRecord, ShipmentStatus } from "@/lib/mock-data";
 
 export const quickPrompts = [
   "催当前队列里超4小时未放舱的柜子",
@@ -77,6 +77,21 @@ export type BookingPlanAttachmentPreview = {
   fileName: string;
   html: string;
   lines: string[];
+};
+
+export type ShipmentStatusEditDraft = {
+  carrier: string;
+  containerNo: string;
+  cutoffTime: string;
+  documentStatus: ShipmentRecord["documentStatus"];
+  etd: string;
+  followUpCount: string;
+  mailStatus: ShipmentRecord["mailStatus"];
+  nextAction: string;
+  operator: string;
+  soNo: string;
+  soStatus: ShipmentRecord["soStatus"];
+  status: ShipmentStatus;
 };
 
 export const contactRoleLabel: Record<ContactRole, string> = {
@@ -200,6 +215,47 @@ export function buildShipmentDetailGroups(shipment: ShipmentRecord): ShipmentDet
       ],
     },
   ];
+}
+
+export function buildShipmentStatusEditDraft(shipment: ShipmentRecord): ShipmentStatusEditDraft {
+  return {
+    carrier: shipment.carrier,
+    containerNo: shipment.containerNo,
+    cutoffTime: shipment.cutoffTime,
+    documentStatus: shipment.documentStatus,
+    etd: shipment.etd,
+    followUpCount: String(shipment.followUpCount),
+    mailStatus: shipment.mailStatus,
+    nextAction: shipment.nextAction,
+    operator: shipment.operator,
+    soNo: shipment.soNo,
+    soStatus: shipment.soStatus,
+    status: shipment.status,
+  };
+}
+
+export function applyShipmentStatusEditDraft(
+  shipment: ShipmentRecord,
+  draft: ShipmentStatusEditDraft,
+): ShipmentRecord {
+  const parsedFollowUpCount = Number.parseInt(draft.followUpCount, 10);
+
+  return {
+    ...shipment,
+    carrier: draft.carrier.trim(),
+    containerNo: draft.containerNo.trim(),
+    cutoffTime: draft.cutoffTime.trim(),
+    documentStatus: draft.documentStatus,
+    etd: draft.etd.trim(),
+    followUpCount: Number.isFinite(parsedFollowUpCount) && parsedFollowUpCount >= 0 ? parsedFollowUpCount : 0,
+    mailStatus: draft.mailStatus,
+    nextAction: draft.nextAction.trim(),
+    operator: draft.operator.trim(),
+    reminderFlags: Array.from(new Set(["人工修正状态明细", ...shipment.reminderFlags])),
+    soNo: draft.soNo.trim(),
+    soStatus: draft.soStatus,
+    status: draft.status,
+  };
 }
 
 export function canCreateBookingPlanFromShipment(shipment: ShipmentRecord): BookingPlanCreateCheck {

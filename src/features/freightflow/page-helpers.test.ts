@@ -6,8 +6,10 @@ import {
   buildBookingPlanAttachmentPreview,
   buildContacts,
   buildPostBookingSendState,
+  buildShipmentStatusEditDraft,
   buildShipmentBrief,
   buildShipmentDetailGroups,
+  applyShipmentStatusEditDraft,
   canCreateBookingPlanFromShipment,
   isValidEmail,
   normalizeEmail,
@@ -130,6 +132,48 @@ describe("buildShipmentDetailGroups", () => {
     expect(groups[1].items).toContainEqual({ label: "截补料", value: "2026-06-11 18:00" });
     expect(groups[2].items).toContainEqual({ label: "提柜地点", value: "Yantian Depot 3" });
     expect(groups[3].items).toContainEqual({ label: "SO 状态", value: "待识别" });
+  });
+});
+
+describe("buildShipmentStatusEditDraft", () => {
+  it("builds editable status detail fields from automatically captured shipment data", () => {
+    const draft = buildShipmentStatusEditDraft(shipments[0]);
+
+    expect(draft).toMatchObject({
+      carrier: "OOCL",
+      containerNo: "TEMU9088771",
+      cutoffTime: "2026-06-11 18:00",
+      documentStatus: "待生成",
+      etd: "2026-06-12 23:00",
+      mailStatus: "跟进中",
+      nextAction: shipments[0].nextAction,
+      operator: "Ava",
+      soNo: "OOLU8791320",
+      soStatus: "待识别",
+      status: "已催放舱",
+    });
+  });
+});
+
+describe("applyShipmentStatusEditDraft", () => {
+  it("applies manual corrections to auto-entered shipment information", () => {
+    const next = applyShipmentStatusEditDraft(shipments[0], {
+      ...buildShipmentStatusEditDraft(shipments[0]),
+      containerNo: "TEMU0000001",
+      followUpCount: "3",
+      mailStatus: "已发送",
+      nextAction: "等待代理回传 SO。",
+      soStatus: "已识别",
+      status: "已放舱",
+    });
+
+    expect(next.containerNo).toBe("TEMU0000001");
+    expect(next.followUpCount).toBe(3);
+    expect(next.mailStatus).toBe("已发送");
+    expect(next.nextAction).toBe("等待代理回传 SO。");
+    expect(next.soStatus).toBe("已识别");
+    expect(next.status).toBe("已放舱");
+    expect(next.reminderFlags).toContain("人工修正状态明细");
   });
 });
 

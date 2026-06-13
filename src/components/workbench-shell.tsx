@@ -73,6 +73,7 @@ type QueuePanelProps = {
   onColumnChange: (columnKey: string) => void;
   onOwnerFilterChange: (value: string) => void;
   onSearchChange: (value: string) => void;
+  onOpenShipmentStatus: (shipmentId: string) => void;
   onSelectShipment: (shipmentId: string) => void;
   ownerFilter: string;
   ownerOptions: string[];
@@ -468,6 +469,7 @@ export function QueuePanel({
   onClearFilters,
   onColumnChange,
   onOwnerFilterChange,
+  onOpenShipmentStatus,
   onSearchChange,
   onSelectShipment,
   ownerFilter,
@@ -653,6 +655,7 @@ export function QueuePanel({
                   key={shipment.id}
                   type="button"
                   onClick={() => onSelectShipment(shipment.id)}
+                  onDoubleClick={() => onOpenShipmentStatus(shipment.id)}
                   className={cx(
                     "relative w-full rounded-lg border px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60 sm:px-3.5",
                     selected
@@ -676,6 +679,7 @@ export function QueuePanel({
                       <p className="mt-1 truncate text-xs text-slate-600">
                         SO {shipment.soNo} · {shipment.carrier} · {shipment.destinationPort}
                       </p>
+                      <p className="mt-1 text-[11px] text-cyan-700">双击查看/修正状态明细</p>
                     </div>
 
                     <span
