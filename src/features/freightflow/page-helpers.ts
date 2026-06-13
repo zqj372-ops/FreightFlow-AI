@@ -154,9 +154,10 @@ export function pickRecommendedAction(shipment: ShipmentRecord): DetailActionLab
 
 export function buildShipmentBrief(shipment: ShipmentRecord): ShipmentBrief {
   const route = `${shipment.originPort} → ${shipment.destinationPort}`;
+  const soDisplay = shipment.soStatus === "已识别" && shipment.soNo.trim() ? shipment.soNo : "待代理回传";
 
   return {
-    primaryLine: `SO ${shipment.soNo} · 柜号 ${shipment.containerNo} · ${shipment.containerType}`,
+    primaryLine: `批次 ${shipment.batchNo} · SO ${soDisplay} · 柜号 ${shipment.containerNo} · ${shipment.containerType}`,
     route,
     summaryItems: [
       { label: "航线", value: route },
@@ -218,6 +219,8 @@ export function buildShipmentDetailGroups(shipment: ShipmentRecord): ShipmentDet
 }
 
 export function buildShipmentStatusEditDraft(shipment: ShipmentRecord): ShipmentStatusEditDraft {
+  const soNo = shipment.soStatus === "已识别" && shipment.soNo.trim() ? shipment.soNo : "待代理回传 SO";
+
   return {
     carrier: shipment.carrier,
     containerNo: shipment.containerNo,
@@ -228,7 +231,7 @@ export function buildShipmentStatusEditDraft(shipment: ShipmentRecord): Shipment
     mailStatus: shipment.mailStatus,
     nextAction: shipment.nextAction,
     operator: shipment.operator,
-    soNo: shipment.soNo,
+    soNo,
     soStatus: shipment.soStatus,
     status: shipment.status,
   };
@@ -239,6 +242,7 @@ export function applyShipmentStatusEditDraft(
   draft: ShipmentStatusEditDraft,
 ): ShipmentRecord {
   const parsedFollowUpCount = Number.parseInt(draft.followUpCount, 10);
+  const nextSoNo = draft.soStatus === "已识别" ? draft.soNo.trim() : "";
 
   return {
     ...shipment,
@@ -252,7 +256,7 @@ export function applyShipmentStatusEditDraft(
     nextAction: draft.nextAction.trim(),
     operator: draft.operator.trim(),
     reminderFlags: Array.from(new Set(["人工修正状态明细", ...shipment.reminderFlags])),
-    soNo: draft.soNo.trim(),
+    soNo: nextSoNo,
     soStatus: draft.soStatus,
     status: draft.status,
   };

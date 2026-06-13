@@ -15,7 +15,7 @@ describe("classifyEmailMessage", () => {
 
     expect(result.recognitionType).toBe("SO_RECEIVED");
     expect(result.confidence).toBeGreaterThanOrEqual(0.8);
-    expect(result.summary).toContain("SO 回传");
+    expect(result.summary).toContain("代理放舱回传");
     expect(result.extractedFields.soNo).toBe("OOLU8791320");
   });
 
@@ -69,5 +69,19 @@ describe("matchShipmentForEmail", () => {
     );
 
     expect(matched?.id).toBe("SHP-240610-001");
+  });
+
+  it("matches waiting release emails by batch before SO is written back", () => {
+    const matched = matchShipmentForEmail(
+      {
+        bodyText: "代理放舱，SO: MAEU7721901，请录入系统。",
+        from: "agent@example.com",
+        messageId: "msg-release-match",
+        subject: "FF-CA-240610-A01 放舱确认",
+      },
+      [{ ...shipments[0], soNo: "", soStatus: "待识别", status: "等待放舱" }],
+    );
+
+    expect(matched?.batchNo).toBe("FF-CA-240610-A01");
   });
 });

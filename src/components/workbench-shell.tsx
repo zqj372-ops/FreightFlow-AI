@@ -677,7 +677,7 @@ export function QueuePanel({
                       </div>
                       <p className="mt-1 truncate text-sm font-semibold text-slate-950">{shipment.containerNo}</p>
                       <p className="mt-1 truncate text-xs text-slate-600">
-                        SO {shipment.soNo} · {shipment.carrier} · {shipment.destinationPort}
+                        批次 {shipment.batchNo} · SO {shipment.soStatus === "已识别" ? shipment.soNo : "待代理回传"}
                       </p>
                       <p className="mt-1 text-[11px] text-cyan-700">双击查看/修正状态明细</p>
                     </div>

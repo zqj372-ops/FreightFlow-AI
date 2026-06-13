@@ -68,13 +68,13 @@ export function classifyEmailMessage(message: RawEmailMessage): EmailRecognition
     };
   }
 
-  if (includesAny(text, ["SO已出", "SO 已出", "SO Released", "booking confirmation"])) {
+  if (includesAny(text, ["SO已出", "SO 已出", "SO Released", "booking confirmation", "放舱确认", "代理放舱"])) {
     return {
       confidence: 0.86,
       extractedFields,
       recognitionType: "SO_RECEIVED",
       riskFlags: [],
-      summary: "识别到 SO 回传邮件，建议人工核对附件和截补料时间后写回 Shipment。",
+      summary: "识别到代理放舱回传邮件，建议核对 SO 号码、附件和截补料时间后写回 Shipment。",
     };
   }
 

@@ -299,7 +299,7 @@ export function ShipmentStatusEditDrawer({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <div className="rounded-lg border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm leading-6 text-cyan-800">
-            来源：邮件识别 / SO 识别 / 操作员录入。若自动识别字段有误，可手动覆盖并保存。
+            等待放舱阶段先使用内部批次号跟进；代理放舱回传后，邮件识别队列会识别 SO 号码并写回。若自动识别字段有误，可手动覆盖并保存。
           </div>
 
           <section className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-4">
@@ -363,7 +363,7 @@ export function ShipmentStatusEditDrawer({
             <p className="text-sm font-semibold text-slate-950">自动录入字段</p>
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <StatusEditInput label="柜号" value={draft.containerNo} onChange={(value) => onChangeDraft({ ...draft, containerNo: value })} />
-              <StatusEditInput label="SO" value={draft.soNo} onChange={(value) => onChangeDraft({ ...draft, soNo: value })} />
+              <StatusEditInput label="SO（代理放舱后识别写回）" value={draft.soNo} onChange={(value) => onChangeDraft({ ...draft, soNo: value })} />
               <StatusEditInput label="船公司" value={draft.carrier} onChange={(value) => onChangeDraft({ ...draft, carrier: value })} />
               <StatusEditInput label="ETD" value={draft.etd} onChange={(value) => onChangeDraft({ ...draft, etd: value })} />
               <StatusEditInput label="截补料" value={draft.cutoffTime} onChange={(value) => onChangeDraft({ ...draft, cutoffTime: value })} />

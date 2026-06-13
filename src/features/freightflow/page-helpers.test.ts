@@ -112,7 +112,7 @@ describe("buildShipmentBrief", () => {
     const brief = buildShipmentBrief(shipments[0]);
 
     expect(brief.route).toBe("Yantian → Vancouver");
-    expect(brief.primaryLine).toBe("SO OOLU8791320 · 柜号 TEMU9088771 · 40HQ");
+    expect(brief.primaryLine).toBe("批次 FF-CA-240610-A01 · SO 待代理回传 · 柜号 TEMU9088771 · 40HQ");
     expect(brief.timing).toBe("ETD 2026-06-12 23:00 / ETA 2026-06-28 09:00");
     expect(brief.summaryItems).toEqual([
       { label: "航线", value: "Yantian → Vancouver" },
@@ -148,7 +148,7 @@ describe("buildShipmentStatusEditDraft", () => {
       mailStatus: "跟进中",
       nextAction: shipments[0].nextAction,
       operator: "Ava",
-      soNo: "OOLU8791320",
+      soNo: "待代理回传 SO",
       soStatus: "待识别",
       status: "已催放舱",
     });
