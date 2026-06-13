@@ -17,6 +17,7 @@ import {
   TriangleAlert,
   UserRound,
 } from "lucide-react";
+import { useRef } from "react";
 import {
   getAlertLevel,
   mainNav,
@@ -479,6 +480,7 @@ export function QueuePanel({
   selectedShipmentId,
   visibleShipments,
 }: QueuePanelProps) {
+  const clickTimerRef = useRef<number | null>(null);
   const alertOptions: Array<{
     key: AlertLevel | "all";
     label: string;
@@ -490,6 +492,26 @@ export function QueuePanel({
   ];
 
   const hasFilters = searchTerm.trim().length > 0 || ownerFilter !== "all" || alertFilter !== "all";
+
+  function clearClickTimer() {
+    if (!clickTimerRef.current) return;
+
+    window.clearTimeout(clickTimerRef.current);
+    clickTimerRef.current = null;
+  }
+
+  function handleShipmentClick(shipmentId: string) {
+    clearClickTimer();
+    clickTimerRef.current = window.setTimeout(() => {
+      onSelectShipment(shipmentId);
+      clickTimerRef.current = null;
+    }, 180);
+  }
+
+  function handleShipmentDoubleClick(shipmentId: string) {
+    clearClickTimer();
+    onOpenShipmentStatus(shipmentId);
+  }
 
   return (
     <section className="flex min-h-0 flex-col rounded-lg border border-slate-200 bg-white shadow-sm shadow-slate-200/30">
@@ -654,8 +676,8 @@ export function QueuePanel({
                 <button
                   key={shipment.id}
                   type="button"
-                  onClick={() => onSelectShipment(shipment.id)}
-                  onDoubleClick={() => onOpenShipmentStatus(shipment.id)}
+                  onClick={() => handleShipmentClick(shipment.id)}
+                  onDoubleClick={() => handleShipmentDoubleClick(shipment.id)}
                   className={cx(
                     "relative w-full rounded-lg border px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60 sm:px-3.5",
                     selected
@@ -679,7 +701,7 @@ export function QueuePanel({
                       <p className="mt-1 truncate text-xs text-slate-600">
                         批次 {shipment.batchNo} · SO {shipment.soStatus === "已识别" ? shipment.soNo : "待代理回传"}
                       </p>
-                      <p className="mt-1 text-[11px] text-cyan-700">双击查看/修正状态明细</p>
+                      <p className="mt-1 text-[11px] text-cyan-700">单击查看信息 · 双击修改信息</p>
                     </div>
 
                     <span

@@ -128,6 +128,7 @@ export function FreightflowWorkbenchPage() {
   const [bookingPlans, setBookingPlans] = useState<BookingPlanRecord[]>([]);
   const [emailRecognitions, setEmailRecognitions] = useState<EmailRecognitionQueueItem[]>([]);
   const [bookingDraftGenerating, setBookingDraftGenerating] = useState(false);
+  const [bookingWorkflowOpen, setBookingWorkflowOpen] = useState(false);
   const [bookingWorkflowDraftId, setBookingWorkflowDraftId] = useState<string | null>(null);
   const [bookingWorkflowStatus, setBookingWorkflowStatus] = useState<string | null>(null);
   const [bookingWorkflowSending, setBookingWorkflowSending] = useState(false);
@@ -490,7 +491,7 @@ export function FreightflowWorkbenchPage() {
   }, [bookingShipmentId, bookingSending]);
 
   useEffect(() => {
-    if (activeBookingSubNav !== "新建订舱计划") return;
+    if (!bookingWorkflowOpen) return;
 
     const plan = bookingPlans.find((item) => item.shipmentId === selectedShipment.id);
     if (!plan?.lastDraftId || plan.lastDraftId === bookingWorkflowDraftId) return;
@@ -503,7 +504,7 @@ export function FreightflowWorkbenchPage() {
       .catch((error) => {
         setBookingWorkflowStatus(error instanceof Error ? error.message : "邮件草稿加载失败");
       });
-  }, [activeBookingSubNav, bookingPlans, bookingWorkflowDraftId, selectedShipment.id]);
+  }, [bookingPlans, bookingWorkflowDraftId, bookingWorkflowOpen, selectedShipment.id]);
 
   function updateShipment(mutator: (shipment: ShipmentRecord) => ShipmentRecord, successMessage: string) {
     if (!selectedShipment) return;
@@ -567,17 +568,43 @@ export function FreightflowWorkbenchPage() {
 
   function openBookingPlanWorkflow() {
     setActiveNav("订舱工作台");
-    setActiveBookingSubNav("新建订舱计划");
+    setActiveBookingSubNav("柜子队列");
+    setBookingWorkflowOpen(true);
     setBookingWorkflowStatus(null);
+  }
+
+  function handleBookingSubNavSelect(item: BookingSubNavItem) {
+    setActiveNav("订舱工作台");
+
+    if (item === "新建订舱计划") {
+      openBookingPlanWorkflow();
+      return;
+    }
+
+    if (item === "柜子状态明细") {
+      setActiveBookingSubNav(item);
+      setDetailDrawerOpen(true);
+      return;
+    }
+
+    setActiveBookingSubNav(item);
+  }
+
+  function openShipmentDetail(shipmentId: string) {
+    const shipment = shipmentState.find((item) => item.id === shipmentId);
+    setSelectedShipmentId(shipmentId);
+    resetAiPanel(shipment);
+    resetBookingWorkflow(shipment);
+    setDetailDrawerOpen(true);
   }
 
   function openShipmentStatusEditor(shipmentId = selectedShipment.id) {
     const shipment = shipmentState.find((item) => item.id === shipmentId) ?? selectedShipment;
     setSelectedShipmentId(shipment.id);
     setStatusEditDraft(buildShipmentStatusEditDraft(shipment));
+    setDetailDrawerOpen(false);
     setStatusEditDrawerOpen(true);
     setActiveNav("订舱工作台");
-    setActiveBookingSubNav("柜子状态明细");
     resetAiPanel(shipment);
     resetBookingWorkflow(shipment);
   }
@@ -662,13 +689,6 @@ export function FreightflowWorkbenchPage() {
     }
   }
 
-  function handleSelectShipment(shipmentId: string) {
-    const nextShipment = visibleShipments.find((shipment) => shipment.id === shipmentId);
-    setSelectedShipmentId(shipmentId);
-    resetAiPanel(nextShipment);
-    resetBookingWorkflow(nextShipment);
-  }
-
   async function handleGenerateWorkflowDraft() {
     if (bookingDraftGenerating) return;
 
@@ -736,6 +756,7 @@ export function FreightflowWorkbenchPage() {
           shipment.id === selectedShipment.id ? buildPostBookingSendState(shipment, sentAt) : shipment,
         ),
       );
+      setBookingWorkflowOpen(false);
       setActiveBookingSubNav("邮件识别队列");
       setBookingWorkflowStatus("订舱邮件已发送，当前柜已进入等待代理回传 SO。由 IMAP 识别回信后人工确认写回。");
       setToast({ tone: "success", message: "订舱邮件已发送，等待代理回传 SO" });
@@ -1063,7 +1084,7 @@ export function FreightflowWorkbenchPage() {
           bookingSubNavItems={[...bookingSubNavItems]}
           onOpenSettings={openOpenClawSettings}
           onSelect={handleNavSelect}
-          onSelectSubNav={(item) => setActiveBookingSubNav(item as BookingSubNavItem)}
+          onSelectSubNav={(item) => handleBookingSubNavSelect(item as BookingSubNavItem)}
           summary={summary}
         />
 
@@ -1096,7 +1117,7 @@ export function FreightflowWorkbenchPage() {
                   onOwnerFilterChange={setOwnerFilter}
                   onOpenShipmentStatus={openShipmentStatusEditor}
                   onSearchChange={setSearchTerm}
-                  onSelectShipment={handleSelectShipment}
+                  onSelectShipment={openShipmentDetail}
                   ownerFilter={ownerFilter}
                   ownerOptions={ownerOptions}
                   recordsForColumn={recordsForColumn}
@@ -1203,46 +1224,42 @@ export function FreightflowWorkbenchPage() {
                 selectedShipment={selectedShipment}
               />
             </div>
-          ) : (
-            <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-3 min-[1500px]:grid-cols-[minmax(0,1fr)_minmax(360px,400px)]">
+          ) : null}
+        </section>
+      </div>
+
+      {bookingWorkflowOpen ? (
+        <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label="新建订舱计划">
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-950/35"
+            onClick={() => {
+              if (!bookingDraftGenerating && !bookingWorkflowSending) setBookingWorkflowOpen(false);
+            }}
+            aria-label="关闭新建订舱计划"
+          />
+          <div className="absolute inset-x-3 top-3 bottom-3 mx-auto flex w-[min(1480px,calc(100vw-24px))] flex-col overflow-hidden rounded-lg bg-white shadow-2xl shadow-slate-950/25 sm:inset-x-5 sm:top-5 sm:bottom-5 sm:w-[min(1480px,calc(100vw-40px))]">
+            <div className="min-h-0 flex-1 overflow-y-auto">
               <BookingPlanWorkflow
                 attachmentPreview={bookingWorkflowAttachment}
                 draft={bookingDraft}
                 form={bookingWorkflowForm}
                 hasPersistedDraft={Boolean(bookingWorkflowDraftId)}
-                onBackToQueue={() => setActiveBookingSubNav("柜子队列")}
+                onBackToQueue={() => setBookingWorkflowOpen(false)}
                 onChangeDraft={setBookingDraft}
                 onChangeForm={setBookingWorkflowForm}
                 onGenerateDraft={() => void handleGenerateWorkflowDraft()}
                 onSendDraft={() => void handleSendWorkflowDraft()}
+                secondaryActionLabel="关闭"
                 saving={bookingDraftGenerating}
                 sending={bookingWorkflowSending}
                 shipment={selectedShipment}
                 statusMessage={bookingWorkflowStatus}
               />
-
-              <aside className="grid min-h-0 min-w-0 grid-cols-1 gap-3 content-start">
-                <ShipmentDetailPanel
-                  aiSummary={selectedShipment.aiSummary}
-                  batchNo={selectedShipment.batchNo}
-                  containerNo={selectedShipment.containerNo}
-                  createBookingPlanCheck={bookingPlanCreateCheck}
-                  cutoffBadgeClassName={toneClass(cutoffTone(selectedShipment.hoursToCutoff))}
-                  cutoffLabel={`截补料 ${selectedShipment.hoursToCutoff}h`}
-                  nextAction={selectedShipment.nextAction}
-                  onCreateBookingPlan={openBookingPlanWorkflow}
-                  onOpenDetails={() => openShipmentStatusEditor(selectedShipment.id)}
-                  shipmentBrief={shipmentBrief}
-                  soNo={selectedShipment.soNo}
-                  status={selectedShipment.status}
-                  statusLevel={selectedShipmentLevel}
-                  vesselVoyage={selectedShipment.vesselVoyage}
-                />
-              </aside>
             </div>
-          )}
-        </section>
-      </div>
+          </div>
+        </div>
+      ) : null}
 
       <BookingModal
         bookingChecklistItems={bookingChecklistItems}

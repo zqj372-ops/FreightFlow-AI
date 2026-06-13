@@ -13,6 +13,7 @@ type BookingPlanWorkflowProps = {
   onChangeForm: (form: BookingFormDraft) => void;
   onGenerateDraft: () => void;
   onSendDraft: () => void;
+  secondaryActionLabel?: string;
   saving: boolean;
   sending: boolean;
   shipment: ShipmentRecord;
@@ -56,6 +57,7 @@ export function BookingPlanWorkflow({
   onChangeForm,
   onGenerateDraft,
   onSendDraft,
+  secondaryActionLabel = "返回柜子队列",
   saving,
   sending,
   shipment,
@@ -91,7 +93,7 @@ export function BookingPlanWorkflow({
               onClick={onBackToQueue}
               className="inline-flex min-h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60"
             >
-              返回柜子队列
+              {secondaryActionLabel}
             </button>
             <button
               type="button"
