@@ -55,6 +55,49 @@
 - **测试**:`npm test` 现有 9 文件 / 66 用例 + 新增 1 文件 / 10 用例 = 10 文件 / 76 用例全部通过,新增文件 0 TS strict 错误;`npx tsc --noEmit` 中所有新增/修改文件无报错(预存在的 13 条报错位于 `src/components/workbench-shell.tsx` 与 `email-recognition-service.test.ts`,不在本 Track 范围)。
 - **交付门**:Track B 交付不依赖 Track A(repositories/)。`runSync` 直接走 `prisma.emailMessage.*`;`repositories/` 后续 Track 接入时只需替换该层。
 
+### 2026-06-14 · Track A · 订舱流程数据层抽象 (mock + prisma 可切换)
+
+- **目标**:在不动前端 mock 演示体验的前提下,把订舱流程核心数据操作抽到 `src/lib/repositories/` 仓储层,`getRepositories()` 工厂根据 `DATABASE_URL` 自动选择 mock 或 prisma 适配器并打 INFO 日志;以前直接 `import mock-data` 的 API 路由改走仓储。
+- **新增接口**(`src/lib/repositories/`,每个一个文件,导 type + interface):
+  - `ShipmentRepository` — `list / getById / advanceStatus / recordActionLog`
+  - `BookingPlanRepository` — `list / getByShipmentId / upsertForShipment / updateStatus / bindLastDraft`
+  - `EmailDraftRepository` — `list / getById / create / update / markSent`
+  - `EmailMessageRepository` — `list / getById / getByMessageId / create / updateSyncStatus`
+  - `EmailRecognitionRepository` — `listPending / getById / create / updateStatus`
+  - `ContactRepository` — `list / getByEmail`
+- **新增 mock 适配器**(`src/lib/repositories/mock/`):模块级 `mock-store.ts` 共享 store,启动时 seed 6 条 Shipment + 派生 BookingPlan + EmailDraft + 3 条 EmailMessage + 对应 EmailRecognitionResult;`MockShipmentRepository.advanceStatus` 使用 `structuredClone` 防止调用方污染内部 store;`MockEmailDraftRepository.markSent` 写入 `sentEmailLogId + lastError` 并把 status 切换到 `sent`。
+- **新增 prisma 适配器**(`src/lib/repositories/prisma/`):走 `@prisma/client` 真实表;统一处理 `DbBookingPlanStatus / DbEmailDraftStatus / DbEmailRecognitionStatus / DbEmailMessageSyncStatus / DbShipmentActionType / DbActionSource / DbContactRole` 的 enum 映射;`PrismaShipmentRepository.advanceStatus` 复用 `freightflow-data.ts` 中的 `shipmentUpdateData` 走 `documentProgress.upsert` + `exceptions/reminderFlags` 重写,与既有真实库行为一致。
+- **工厂**(`src/lib/repositories/index.ts`):
+  - `getRepositories()` 首次调用做 `DATABASE_URL` 探测:`$queryRaw SELECT 1`,失败则走 `mock` 模式(对 `isPrismaUnavailable` 的 catch 兼容)。
+  - 缓存同一个 bundle 在模块级变量,避免多次新建;`__resetRepositoryCache()` 给测试用。
+  - 打一行 `console.info("[repositories] using Prisma (DATABASE_URL detected) data layer")` 或 `... in-memory mock (DATABASE_URL not configured) data layer`。
+  - barrel 同步 re-export 所有 repo 类型,call site 只需 `import { getRepositories, type BookingPlanRecord } from "@/lib/repositories"`。
+- **API 路由重构**:
+  - `src/app/api/shipments/route.ts` — 改用 `repos.shipments.list()`,根据 `repos.mode` 返回 `{ data, source: "database" }` 或 `{ data, source: "mock", warning }`。
+  - `src/app/api/shipments/[id]/route.ts` — 改用 `repos.shipments.getById()`,404 时根据 mode 返回 `"Shipment not found."` 或 `"Shipment not found in mock fallback."`,与原行为对齐。
+  - `src/app/api/email-recognitions/route.ts` — 改用 `repos.emailRecognitions.listPending()`,mock 模式下回退到 `listMockEmailRecognitionQueue`。
+  - `src/app/api/booking-plans/route.ts` / `src/app/api/booking-plans/batch-drafts/route.ts` / `src/app/api/email-drafts/[draftId]/route.ts` / `src/app/api/email-drafts/[draftId]/send/route.ts` / `src/app/api/email-recognitions/[id]/review/route.ts` — **保持现状**,继续走既有 service。service 内部使用 `prisma.$transaction` 处理多表一致(如 `sendEmailDraft` 同时更新 draft + plan + shipment),把交易型操作迁到仓储需要引入事务抽象(超出本 Track 范围,留待后续 Track 评估)。
+- **新测试**(`src/lib/repositories/__tests__/` 共 6 个文件 / 29 个用例):
+  - `factory.test.ts` — 工厂在 `DATABASE_URL` 缺失 / 不可达 / 配置正确时的 mode 选择,bundle 形状稳定,store seed 一致。
+  - `booking-plan-repository.test.ts` — list / getByShipmentId / upsertForShipment / updateStatus / bindLastDraft / 未知 id 返回 null。
+  - `email-draft-repository.test.ts` — list / getById / create / update / markSent / 未知 id 返回 null。
+  - `shipment-repository.test.ts` — list / getById 深拷贝隔离 / advanceStatus / recordActionLog / 缺失 ID 返回 null。
+  - `email-recognition-repository.test.ts` — 种子 EmailMessage + Recognition 关联 / `listPending` 过滤 / `updateStatus` 切到 confirmed 后从队列中消失。
+  - `contact-repository.test.ts` — 列表 = `getFallbackContacts`,大小写不敏感 email 查找。
+  - `src/app/api/shipments/route.test.ts` — `GET /api/shipments` 在 mock 模式返回 6 条 + warning;`GET /api/shipments/SHP-240610-002` 返回 200;`GET /api/shipments/<missing>` 返回 404;`GET /api/email-recognitions` 在 mock 模式返回 `pending_review` 队列。
+- **强制约束验证**:
+  - `npx tsc --noEmit` 4 条预存报错(均在 `email-recognition-service.test.ts` 与 `workbench-shell.tsx` 与本 Track 无关);新文件 0 报错。
+  - `npm test`:基线 10 文件 / 76 用例 + 新增 7 文件 / 32 用例 = **17 文件 / 108 用例全过**。
+  - `npx eslint src/lib/repositories src/app/api/shipments src/app/api/email-recognitions`:0 警告 0 错误。
+  - 未引入新运行时依赖。
+  - 仓储接口不依赖 `next/server` 或任何 next 专属类型。
+  - mock 适配器复用 `mock-data.ts` 与 `getFallbackContacts()`,不写死假数据。
+- **遗留问题 / 后续 Track**:
+  - 5 个走 service 的 API 路由的 service 内部仍是 `prisma.*` 直接调用,后续 Track 评估是否把单表 CRUD 也走仓储 + 把 `prisma.$transaction` 抽成仓储事务。
+  - `EmailRecognitionRepository.getById` / `MockEmailRecognitionRepository` 的 email message join 行为目前服务于识别队列,后续 Track 接入 review writeback 时可直接复用。
+  - 数据库 schema 仍按既有定义,本 Track 未改 `prisma/schema.prisma`。
+
+
 
 
 - 已确认正确 GitHub 远程仓库为 `https://github.com/zqj372-ops/FreightFlow-AI.git`;`NEW-FR-AI.git` 是用户的另一个项目,不得继续推送本项目代码。
