@@ -99,18 +99,30 @@ export type BookingPlanAttachmentPreview = {
 };
 
 export type ShipmentStatusEditDraft = {
+  blTelexStatus: NonNullable<ShipmentRecord["blTelexStatus"]>;
+  cbm: string;
   carrier: string;
   containerNo: string;
+  customsBroker: string;
+  cutCustomsTime: string;
   cutoffTime: string;
+  cutWeightTime: string;
   documentStatus: ShipmentRecord["documentStatus"];
+  eta: string;
   etd: string;
   followUpCount: string;
+  grossWeight: string;
   mailStatus: ShipmentRecord["mailStatus"];
   nextAction: string;
+  oceanFreightPrice: string;
   operator: string;
+  packages: string;
   soNo: string;
   soStatus: ShipmentRecord["soStatus"];
   status: ShipmentStatus;
+  truckingCompany: string;
+  vesselName: string;
+  voyageNo: string;
 };
 
 export const contactRoleLabel: Record<ContactRole, string> = {
@@ -317,20 +329,33 @@ export function buildBookingTrackingCard(shipment: ShipmentRecord): BookingTrack
 
 export function buildShipmentStatusEditDraft(shipment: ShipmentRecord): ShipmentStatusEditDraft {
   const soNo = shipment.soStatus === "已识别" && shipment.soNo.trim() ? shipment.soNo : "待代理回传 SO";
+  const fallbackVessel = splitVesselVoyage(shipment.vesselVoyage);
 
   return {
+    blTelexStatus: shipment.blTelexStatus ?? "未确认",
+    cbm: shipment.cbm ?? "",
     carrier: shipment.carrier,
     containerNo: shipment.containerNo,
+    customsBroker: shipment.customsBroker ?? "",
+    cutCustomsTime: shipment.cutCustomsTime ?? "",
     cutoffTime: shipment.cutoffTime,
+    cutWeightTime: shipment.cutWeightTime ?? "",
     documentStatus: shipment.documentStatus,
+    eta: shipment.eta,
     etd: shipment.etd,
     followUpCount: String(shipment.followUpCount),
+    grossWeight: shipment.grossWeight ?? "",
     mailStatus: shipment.mailStatus,
     nextAction: shipment.nextAction,
+    oceanFreightPrice: shipment.oceanFreightPrice ?? "",
     operator: shipment.operator,
+    packages: shipment.packages ?? "",
     soNo,
     soStatus: shipment.soStatus,
     status: shipment.status,
+    truckingCompany: shipment.truckingCompany ?? "",
+    vesselName: shipment.vesselName?.trim() ? shipment.vesselName : fallbackVessel.vesselName,
+    voyageNo: shipment.voyageNo?.trim() ? shipment.voyageNo : fallbackVessel.voyageNo,
   };
 }
 
@@ -340,22 +365,38 @@ export function applyShipmentStatusEditDraft(
 ): ShipmentRecord {
   const parsedFollowUpCount = Number.parseInt(draft.followUpCount, 10);
   const nextSoNo = draft.soStatus === "已识别" ? draft.soNo.trim() : "";
+  const nextVesselName = draft.vesselName.trim();
+  const nextVoyageNo = draft.voyageNo.trim();
+  const nextVesselVoyage = [nextVesselName, nextVoyageNo].filter(Boolean).join(" ");
 
   return {
     ...shipment,
+    blTelexStatus: draft.blTelexStatus,
+    cbm: draft.cbm.trim(),
     carrier: draft.carrier.trim(),
     containerNo: draft.containerNo.trim(),
+    customsBroker: draft.customsBroker.trim(),
+    cutCustomsTime: draft.cutCustomsTime.trim(),
     cutoffTime: draft.cutoffTime.trim(),
+    cutWeightTime: draft.cutWeightTime.trim(),
     documentStatus: draft.documentStatus,
+    eta: draft.eta.trim(),
     etd: draft.etd.trim(),
     followUpCount: Number.isFinite(parsedFollowUpCount) && parsedFollowUpCount >= 0 ? parsedFollowUpCount : 0,
+    grossWeight: draft.grossWeight.trim(),
     mailStatus: draft.mailStatus,
     nextAction: draft.nextAction.trim(),
+    oceanFreightPrice: draft.oceanFreightPrice.trim(),
     operator: draft.operator.trim(),
+    packages: draft.packages.trim(),
     reminderFlags: Array.from(new Set(["人工修正状态明细", ...shipment.reminderFlags])),
     soNo: nextSoNo,
     soStatus: draft.soStatus,
     status: draft.status,
+    truckingCompany: draft.truckingCompany.trim(),
+    vesselName: nextVesselName,
+    vesselVoyage: nextVesselVoyage,
+    voyageNo: nextVoyageNo,
   };
 }
 

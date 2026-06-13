@@ -206,17 +206,29 @@ describe("buildShipmentStatusEditDraft", () => {
     const draft = buildShipmentStatusEditDraft(shipments[0]);
 
     expect(draft).toMatchObject({
+      blTelexStatus: "待确认",
+      cbm: "68.5 CBM",
       carrier: "OOCL",
       containerNo: "TEMU9088771",
+      customsBroker: "Yantian Customs Desk",
+      cutCustomsTime: "2026-06-11 16:00",
       cutoffTime: "2026-06-11 18:00",
+      cutWeightTime: "2026-06-11 14:00",
       documentStatus: "待生成",
+      eta: "2026-06-28 09:00",
       etd: "2026-06-12 23:00",
+      grossWeight: "18,240 KG",
       mailStatus: "跟进中",
       nextAction: shipments[0].nextAction,
+      oceanFreightPrice: "USD 2,450",
       operator: "Ava",
+      packages: "860 CTNS",
       soNo: "待代理回传 SO",
       soStatus: "待识别",
       status: "已催放舱",
+      truckingCompany: "Shenzhen Port Trucking",
+      vesselName: "OOCL Rauma",
+      voyageNo: "068E",
     });
   });
 });
@@ -226,19 +238,38 @@ describe("applyShipmentStatusEditDraft", () => {
     const next = applyShipmentStatusEditDraft(shipments[0], {
       ...buildShipmentStatusEditDraft(shipments[0]),
       containerNo: "TEMU0000001",
+      cutCustomsTime: "2026-06-12 11:00",
+      cutWeightTime: "2026-06-12 09:00",
+      eta: "2026-06-30 18:00",
       followUpCount: "3",
+      grossWeight: "19,000 KG",
       mailStatus: "已发送",
       nextAction: "等待代理回传 SO。",
+      oceanFreightPrice: "USD 2,600",
+      packages: "900 CTNS",
       soStatus: "已识别",
       status: "已放舱",
+      truckingCompany: "Updated Trucking",
+      vesselName: "Updated Vessel",
+      voyageNo: "188E",
     });
 
     expect(next.containerNo).toBe("TEMU0000001");
+    expect(next.cutCustomsTime).toBe("2026-06-12 11:00");
+    expect(next.cutWeightTime).toBe("2026-06-12 09:00");
+    expect(next.eta).toBe("2026-06-30 18:00");
     expect(next.followUpCount).toBe(3);
+    expect(next.grossWeight).toBe("19,000 KG");
     expect(next.mailStatus).toBe("已发送");
     expect(next.nextAction).toBe("等待代理回传 SO。");
+    expect(next.oceanFreightPrice).toBe("USD 2,600");
+    expect(next.packages).toBe("900 CTNS");
     expect(next.soStatus).toBe("已识别");
     expect(next.status).toBe("已放舱");
+    expect(next.truckingCompany).toBe("Updated Trucking");
+    expect(next.vesselName).toBe("Updated Vessel");
+    expect(next.vesselVoyage).toBe("Updated Vessel 188E");
+    expect(next.voyageNo).toBe("188E");
     expect(next.reminderFlags).toContain("人工修正状态明细");
   });
 });

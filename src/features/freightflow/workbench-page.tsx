@@ -590,14 +590,6 @@ export function FreightflowWorkbenchPage() {
     setActiveBookingSubNav(item);
   }
 
-  function openShipmentDetail(shipmentId: string) {
-    const shipment = shipmentState.find((item) => item.id === shipmentId);
-    setSelectedShipmentId(shipmentId);
-    resetAiPanel(shipment);
-    resetBookingWorkflow(shipment);
-    setDetailDrawerOpen(true);
-  }
-
   function openShipmentStatusEditor(shipmentId = selectedShipment.id) {
     const shipment = shipmentState.find((item) => item.id === shipmentId) ?? selectedShipment;
     setSelectedShipmentId(shipment.id);
@@ -1115,9 +1107,8 @@ export function FreightflowWorkbenchPage() {
                   onClearFilters={handleResetQueueFilters}
                   onColumnChange={handleColumnChange}
                   onOwnerFilterChange={setOwnerFilter}
-                  onOpenShipmentStatus={openShipmentStatusEditor}
                   onSearchChange={setSearchTerm}
-                  onSelectShipment={openShipmentDetail}
+                  onSelectShipment={openShipmentStatusEditor}
                   ownerFilter={ownerFilter}
                   ownerOptions={ownerOptions}
                   recordsForColumn={recordsForColumn}

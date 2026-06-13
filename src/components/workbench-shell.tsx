@@ -17,7 +17,6 @@ import {
   TriangleAlert,
   UserRound,
 } from "lucide-react";
-import { useRef } from "react";
 import { buildBookingTrackingCard } from "@/features/freightflow/page-helpers";
 import {
   getAlertLevel,
@@ -75,7 +74,6 @@ type QueuePanelProps = {
   onColumnChange: (columnKey: string) => void;
   onOwnerFilterChange: (value: string) => void;
   onSearchChange: (value: string) => void;
-  onOpenShipmentStatus: (shipmentId: string) => void;
   onSelectShipment: (shipmentId: string) => void;
   ownerFilter: string;
   ownerOptions: string[];
@@ -133,9 +131,9 @@ function levelDot(level: AlertLevel) {
 
 function TrackingField({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded-md bg-white/85 px-2.5 py-2 ring-1 ring-cyan-100/70">
-      <p className="text-[10px] leading-4 text-slate-400">{label}</p>
-      <p className="mt-0.5 break-words text-[11px] font-medium leading-4 text-slate-800">{value}</p>
+    <div className="min-w-0 border-r border-b border-cyan-100 px-2.5 py-2 last:border-r-0">
+      <p className="text-[10px] font-medium leading-4 text-slate-500">{label}</p>
+      <p className="mt-0.5 truncate text-[11px] font-semibold leading-4 text-slate-900">{value}</p>
     </div>
   );
 }
@@ -473,7 +471,6 @@ export function QueuePanel({
   onClearFilters,
   onColumnChange,
   onOwnerFilterChange,
-  onOpenShipmentStatus,
   onSearchChange,
   onSelectShipment,
   ownerFilter,
@@ -483,7 +480,6 @@ export function QueuePanel({
   selectedShipmentId,
   visibleShipments,
 }: QueuePanelProps) {
-  const clickTimerRef = useRef<number | null>(null);
   const alertOptions: Array<{
     key: AlertLevel | "all";
     label: string;
@@ -495,26 +491,6 @@ export function QueuePanel({
   ];
 
   const hasFilters = searchTerm.trim().length > 0 || ownerFilter !== "all" || alertFilter !== "all";
-
-  function clearClickTimer() {
-    if (!clickTimerRef.current) return;
-
-    window.clearTimeout(clickTimerRef.current);
-    clickTimerRef.current = null;
-  }
-
-  function handleShipmentClick(shipmentId: string) {
-    clearClickTimer();
-    clickTimerRef.current = window.setTimeout(() => {
-      onSelectShipment(shipmentId);
-      clickTimerRef.current = null;
-    }, 180);
-  }
-
-  function handleShipmentDoubleClick(shipmentId: string) {
-    clearClickTimer();
-    onOpenShipmentStatus(shipmentId);
-  }
 
   return (
     <section className="flex min-h-0 flex-col rounded-lg border border-slate-200 bg-white shadow-sm shadow-slate-200/30">
@@ -681,13 +657,12 @@ export function QueuePanel({
                   key={shipment.id}
                   role="button"
                   tabIndex={0}
-                  onClick={() => handleShipmentClick(shipment.id)}
-                  onDoubleClick={() => handleShipmentDoubleClick(shipment.id)}
+                  onClick={() => onSelectShipment(shipment.id)}
                   onKeyDown={(event) => {
                     if (event.key !== "Enter" && event.key !== " ") return;
 
                     event.preventDefault();
-                    handleShipmentClick(shipment.id);
+                    onSelectShipment(shipment.id);
                   }}
                   className={cx(
                     "relative w-full cursor-pointer rounded-lg border px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60 sm:px-3.5",
@@ -698,9 +673,9 @@ export function QueuePanel({
                 >
                   {selected ? <span className="absolute inset-y-3 left-0 w-1 rounded-r-full bg-cyan-600" /> : null}
 
-                  <div className="flex flex-wrap items-start justify-between gap-2 pl-1">
+                  <div className="flex flex-wrap items-center justify-between gap-2 pl-1">
                     <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <p className="break-words text-[11px] font-semibold uppercase text-slate-500">{trackingCard.batchNo}</p>
+                      <p className="break-words text-sm font-semibold text-blue-700">{trackingCard.batchNo}</p>
                       {trackingCard.cutoffPills.map((pill) => (
                         <span key={pill.label} className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
                           {pill.label} {pill.value}
@@ -719,8 +694,8 @@ export function QueuePanel({
                     </span>
                   </div>
 
-                  <div className="mt-2 grid grid-cols-1 gap-2 rounded-lg bg-cyan-50/70 px-2.5 py-2 sm:grid-cols-2">
-                    <div className="min-w-0">
+                  <div className="mt-2 grid grid-cols-1 gap-2 rounded-lg bg-cyan-50/70 px-2.5 py-2 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,0.9fr)]">
+                    <div className="min-w-0 border-r border-cyan-100 pr-2">
                       <p className="text-[10px] leading-4 text-cyan-700">柜号</p>
                       <a
                         href={trackingCard.queryUrl}
@@ -728,12 +703,12 @@ export function QueuePanel({
                         rel="noreferrer"
                         onClick={(event) => event.stopPropagation()}
                         onDoubleClick={(event) => event.stopPropagation()}
-                        className="mt-0.5 block break-words text-sm font-semibold leading-5 text-slate-950 underline-offset-2 hover:text-cyan-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60"
+                        className="mt-0.5 block truncate text-lg font-semibold leading-6 text-slate-950 underline-offset-2 hover:text-cyan-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60"
                       >
                         {trackingCard.containerNo}
                       </a>
                     </div>
-                    <div className="min-w-0">
+                    <div className="min-w-0 border-r border-cyan-100 pr-2">
                       <p className="text-[10px] leading-4 text-cyan-700">SO号</p>
                       <a
                         href={trackingCard.queryUrl}
@@ -741,34 +716,39 @@ export function QueuePanel({
                         rel="noreferrer"
                         onClick={(event) => event.stopPropagation()}
                         onDoubleClick={(event) => event.stopPropagation()}
-                        className="mt-0.5 block break-words text-sm font-semibold leading-5 text-slate-950 underline-offset-2 hover:text-cyan-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60"
+                        className="mt-0.5 block truncate text-base font-semibold leading-6 text-slate-950 underline-offset-2 hover:text-cyan-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60"
                       >
                         {trackingCard.soNo}
                       </a>
                     </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] leading-4 text-slate-500">订舱代理</p>
+                      <p className="mt-0.5 truncate text-sm font-semibold leading-6 text-slate-800">{trackingCard.bookingAgent}</p>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] leading-4 text-slate-500">海运费报价</p>
+                      <p className="mt-0.5 truncate text-sm font-semibold leading-6 text-slate-800">{trackingCard.oceanFreightPrice}</p>
+                    </div>
                   </div>
 
-                  <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-600 min-[1420px]:grid-cols-4">
-                    <TrackingField label="订舱代理" value={trackingCard.bookingAgent} />
-                    <TrackingField label="海运费报价" value={trackingCard.oceanFreightPrice} />
+                  <div className="mt-2 grid grid-cols-2 overflow-hidden rounded-lg border border-cyan-100 bg-white/70 text-[11px] text-slate-600 lg:grid-cols-6">
                     <TrackingField label="柜型" value={trackingCard.containerType} />
                     <TrackingField label="船名 / 航次" value={trackingCard.vesselVoyage} />
                     <TrackingField label="件数 / 毛重 / 体积" value={trackingCard.packageWeightVolume} />
-                    <TrackingField label="开船时间" value={trackingCard.etd} />
-                    <TrackingField label="到港时间" value={trackingCard.eta} />
+                    <TrackingField label="截单时间" value={trackingCard.cutoffPills[0]?.value ?? "-"} />
+                    <TrackingField label="截重时间" value={trackingCard.cutoffPills[1]?.value ?? "-"} />
+                    <TrackingField label="截关时间" value={trackingCard.cutoffPills[2]?.value ?? "-"} />
+                    <TrackingField label="ETD" value={trackingCard.etd} />
+                    <TrackingField label="ETA" value={trackingCard.eta} />
                     <TrackingField label="拖车行" value={trackingCard.truckingCompany} />
                     <TrackingField label="报关行" value={trackingCard.customsBroker} />
-                    <div className="min-w-0 rounded-md bg-white/85 px-2.5 py-2 ring-1 ring-cyan-100/70">
-                      <p className="text-[10px] leading-4 text-slate-400">提单电放确认</p>
+                    <div className="min-w-0 border-r border-b border-cyan-100 px-2.5 py-2">
+                      <p className="text-[10px] font-medium leading-4 text-slate-500">提单电放确认</p>
                       <span className={cx("mt-1 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium", trackingCard.blTelexStatus.className)}>
                         {trackingCard.blTelexStatus.label}
                       </span>
                     </div>
                     <TrackingField label="当前状态" value={trackingCard.status} />
-                    <div className="min-w-0 rounded-md bg-white/85 px-2.5 py-2 ring-1 ring-cyan-100/70">
-                      <p className="text-[10px] leading-4 text-slate-400">操作</p>
-                      <p className="mt-0.5 break-words text-[11px] font-medium leading-4 text-cyan-700">单击查看 · 双击编辑</p>
-                    </div>
                   </div>
                 </div>
               );

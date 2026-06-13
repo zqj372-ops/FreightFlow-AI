@@ -276,14 +276,14 @@ export function ShipmentStatusEditDrawer({
         onClick={onClose}
         aria-label="关闭柜子状态明细"
       />
-      <aside className="absolute right-0 top-0 flex h-full w-full max-w-[620px] flex-col border-l border-slate-200 bg-white shadow-2xl shadow-slate-950/20">
+      <aside className="absolute right-0 top-0 flex h-full w-full max-w-[720px] flex-col border-l border-slate-200 bg-white shadow-2xl shadow-slate-950/20">
         <div className="border-b border-slate-200 px-5 py-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-cyan-700">柜子状态明细</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-cyan-700">订舱跟踪详情</p>
               <h2 className="mt-2 break-words text-lg font-semibold text-slate-950">{shipment.batchNo}</h2>
               <p className="mt-1 break-words text-sm leading-6 text-slate-600">
-                自动录入信息可在这里人工修正，保存后更新当前工作台状态。
+                单击队列卡片后可在这里查看并修正状态、SO、柜号和订舱跟踪字段。
               </p>
             </div>
             <button
@@ -299,7 +299,7 @@ export function ShipmentStatusEditDrawer({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <div className="rounded-lg border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm leading-6 text-cyan-800">
-            等待放舱阶段先使用内部批次号跟进；代理放舱回传后，邮件识别队列会识别 SO 号码并写回。若自动识别字段有误，可手动覆盖并保存。
+            等待放舱阶段先使用内部批次号跟进；代理放舱回传后，邮件识别队列会识别 SO 号码并写回。海运费、件毛体、拖车行、报关行和电放确认也可人工录入。
           </div>
 
           <section className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-4">
@@ -356,19 +356,49 @@ export function ShipmentStatusEditDrawer({
                   ))}
                 </select>
               </label>
+
+              <label className="block text-sm text-slate-700">
+                <span className="mb-1.5 block text-xs font-medium text-slate-500">提单电放确认</span>
+                <select
+                  value={draft.blTelexStatus || "未确认"}
+                  onChange={(event) => onChangeDraft({ ...draft, blTelexStatus: event.target.value as ShipmentStatusEditDraft["blTelexStatus"] })}
+                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-cyan-500"
+                >
+                  {(["未确认", "待确认", "已确认"] as const).map((status) => (
+                    <option key={status} value={status}>{status}</option>
+                  ))}
+                </select>
+              </label>
             </div>
           </section>
 
           <section className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-4">
-            <p className="text-sm font-semibold text-slate-950">自动录入字段</p>
+            <p className="text-sm font-semibold text-slate-950">基础与时效字段</p>
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <StatusEditInput label="柜号" value={draft.containerNo} onChange={(value) => onChangeDraft({ ...draft, containerNo: value })} />
               <StatusEditInput label="SO（代理放舱后识别写回）" value={draft.soNo} onChange={(value) => onChangeDraft({ ...draft, soNo: value })} />
               <StatusEditInput label="船公司" value={draft.carrier} onChange={(value) => onChangeDraft({ ...draft, carrier: value })} />
+              <StatusEditInput label="船名" value={draft.vesselName} onChange={(value) => onChangeDraft({ ...draft, vesselName: value })} />
+              <StatusEditInput label="航次" value={draft.voyageNo} onChange={(value) => onChangeDraft({ ...draft, voyageNo: value })} />
               <StatusEditInput label="ETD" value={draft.etd} onChange={(value) => onChangeDraft({ ...draft, etd: value })} />
-              <StatusEditInput label="截补料" value={draft.cutoffTime} onChange={(value) => onChangeDraft({ ...draft, cutoffTime: value })} />
+              <StatusEditInput label="ETA" value={draft.eta} onChange={(value) => onChangeDraft({ ...draft, eta: value })} />
+              <StatusEditInput label="截单时间" value={draft.cutoffTime} onChange={(value) => onChangeDraft({ ...draft, cutoffTime: value })} />
+              <StatusEditInput label="截重时间" value={draft.cutWeightTime} onChange={(value) => onChangeDraft({ ...draft, cutWeightTime: value })} />
+              <StatusEditInput label="截关时间" value={draft.cutCustomsTime} onChange={(value) => onChangeDraft({ ...draft, cutCustomsTime: value })} />
               <StatusEditInput label="负责人" value={draft.operator} onChange={(value) => onChangeDraft({ ...draft, operator: value })} />
               <StatusEditInput label="跟进次数" value={draft.followUpCount} onChange={(value) => onChangeDraft({ ...draft, followUpCount: value })} />
+            </div>
+          </section>
+
+          <section className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-4">
+            <p className="text-sm font-semibold text-slate-950">订舱跟踪字段</p>
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <StatusEditInput label="海运费报价" value={draft.oceanFreightPrice} onChange={(value) => onChangeDraft({ ...draft, oceanFreightPrice: value })} />
+              <StatusEditInput label="件数" value={draft.packages} onChange={(value) => onChangeDraft({ ...draft, packages: value })} />
+              <StatusEditInput label="毛重" value={draft.grossWeight} onChange={(value) => onChangeDraft({ ...draft, grossWeight: value })} />
+              <StatusEditInput label="体积" value={draft.cbm} onChange={(value) => onChangeDraft({ ...draft, cbm: value })} />
+              <StatusEditInput label="拖车行" value={draft.truckingCompany} onChange={(value) => onChangeDraft({ ...draft, truckingCompany: value })} />
+              <StatusEditInput label="报关行" value={draft.customsBroker} onChange={(value) => onChangeDraft({ ...draft, customsBroker: value })} />
             </div>
 
             <label className="mt-3 block text-sm text-slate-700">
