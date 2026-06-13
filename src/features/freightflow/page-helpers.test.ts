@@ -4,6 +4,7 @@ import {
   buildBookingDraft,
   buildBookingFormDraft,
   buildBookingPlanAttachmentPreview,
+  buildBookingTrackingCard,
   buildContacts,
   buildPostBookingSendState,
   buildShipmentStatusEditDraft,
@@ -132,6 +133,71 @@ describe("buildShipmentDetailGroups", () => {
     expect(groups[1].items).toContainEqual({ label: "截补料", value: "2026-06-11 18:00" });
     expect(groups[2].items).toContainEqual({ label: "提柜地点", value: "Yantian Depot 3" });
     expect(groups[3].items).toContainEqual({ label: "SO 状态", value: "待识别" });
+  });
+});
+
+describe("buildBookingTrackingCard", () => {
+  it("formats the booking tracking card fields with merged values and empty fallbacks", () => {
+    const card = buildBookingTrackingCard({
+      ...shipments[0],
+      blTelexStatus: "待确认",
+      cbm: "68.5 CBM",
+      customsBroker: "Yantian Customs Desk",
+      cutCustomsTime: "2026-06-11 16:00",
+      cutWeightTime: "2026-06-11 14:00",
+      grossWeight: "18,240 KG",
+      oceanFreightPrice: "USD 2,450",
+      packages: "860 CTNS",
+      soStatus: "待识别",
+      truckingCompany: "Shenzhen Port Trucking",
+      vesselName: "",
+      voyageNo: "",
+    });
+
+    expect(card.batchNo).toBe("FF-CA-240610-A01");
+    expect(card.soNo).toBe("待代理回传");
+    expect(card.containerNo).toBe("TEMU9088771");
+    expect(card.bookingAgent).toBe("Seabay Logistics");
+    expect(card.oceanFreightPrice).toBe("USD 2,450");
+    expect(card.packageWeightVolume).toBe("860 CTNS / 18,240 KG / 68.5 CBM");
+    expect(card.vesselVoyage).toBe("OOCL Rauma / 068E");
+    expect(card.blTelexStatus).toEqual({ className: "border-amber-200 bg-amber-50 text-amber-700", label: "待确认" });
+    expect(card.cutoffPills).toEqual([
+      { label: "截单", value: "2026-06-11 18:00" },
+      { label: "截重", value: "2026-06-11 14:00" },
+      { label: "截关", value: "2026-06-11 16:00" },
+    ]);
+    expect(card.queryUrl).toBe("https://www.oocl.com/eng/ourservices/eservices/cargotracking/Pages/cargotracking.aspx");
+  });
+
+  it("uses dashes for missing optional booking tracking fields", () => {
+    const card = buildBookingTrackingCard({
+      ...shipments[0],
+      blTelexStatus: "",
+      cbm: "",
+      containerNo: "",
+      cutCustomsTime: "",
+      cutWeightTime: "",
+      grossWeight: "",
+      oceanFreightPrice: "",
+      packages: "",
+      soNo: "",
+      vesselName: "",
+      vesselVoyage: "",
+      voyageNo: "",
+    });
+
+    expect(card.soNo).toBe("-");
+    expect(card.containerNo).toBe("-");
+    expect(card.oceanFreightPrice).toBe("-");
+    expect(card.packageWeightVolume).toBe("- / - / -");
+    expect(card.vesselVoyage).toBe("- / -");
+    expect(card.blTelexStatus.label).toBe("未确认");
+    expect(card.cutoffPills).toEqual([
+      { label: "截单", value: "2026-06-11 18:00" },
+      { label: "截重", value: "-" },
+      { label: "截关", value: "-" },
+    ]);
   });
 });
 

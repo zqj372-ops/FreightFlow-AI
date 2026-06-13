@@ -18,6 +18,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { useRef } from "react";
+import { buildBookingTrackingCard } from "@/features/freightflow/page-helpers";
 import {
   getAlertLevel,
   mainNav,
@@ -130,11 +131,13 @@ function levelDot(level: AlertLevel) {
   return "bg-emerald-500";
 }
 
-function describeWaitWindow(shipment: ShipmentRecord) {
-  if (shipment.hoursToCutoff <= 6) return `截补料剩余 ${shipment.hoursToCutoff}h`;
-  if (shipment.hoursWaitingRelease >= 4) return `已等待放舱 ${shipment.hoursWaitingRelease}h`;
-  if (shipment.followUpCount > 0) return `已跟进 ${shipment.followUpCount} 次`;
-  return `ETD ${shipment.etd}`;
+function TrackingField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-md bg-white/85 px-2.5 py-2 ring-1 ring-cyan-100/70">
+      <p className="text-[10px] leading-4 text-slate-400">{label}</p>
+      <p className="mt-0.5 break-words text-[11px] font-medium leading-4 text-slate-800">{value}</p>
+    </div>
+  );
 }
 
 const navMeta: Record<
@@ -671,15 +674,23 @@ export function QueuePanel({
             {visibleShipments.map((shipment) => {
               const level = getAlertLevel(shipment);
               const selected = selectedShipmentId === shipment.id;
+              const trackingCard = buildBookingTrackingCard(shipment);
 
               return (
-                <button
+                <div
                   key={shipment.id}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => handleShipmentClick(shipment.id)}
                   onDoubleClick={() => handleShipmentDoubleClick(shipment.id)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+
+                    event.preventDefault();
+                    handleShipmentClick(shipment.id);
+                  }}
                   className={cx(
-                    "relative w-full rounded-lg border px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60 sm:px-3.5",
+                    "relative w-full cursor-pointer rounded-lg border px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60 sm:px-3.5",
                     selected
                       ? "border-cyan-600 bg-cyan-50/80 shadow-sm shadow-cyan-100"
                       : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50",
@@ -687,21 +698,14 @@ export function QueuePanel({
                 >
                   {selected ? <span className="absolute inset-y-3 left-0 w-1 rounded-r-full bg-cyan-600" /> : null}
 
-                  <div className="flex items-start justify-between gap-3 pl-1">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                          {shipment.batchNo}
-                        </p>
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">
-                          {describeWaitWindow(shipment)}
+                  <div className="flex flex-wrap items-start justify-between gap-2 pl-1">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <p className="break-words text-[11px] font-semibold uppercase text-slate-500">{trackingCard.batchNo}</p>
+                      {trackingCard.cutoffPills.map((pill) => (
+                        <span key={pill.label} className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                          {pill.label} {pill.value}
                         </span>
-                      </div>
-                      <p className="mt-1 truncate text-sm font-semibold text-slate-950">{shipment.containerNo}</p>
-                      <p className="mt-1 truncate text-xs text-slate-600">
-                        批次 {shipment.batchNo} · SO {shipment.soStatus === "已识别" ? shipment.soNo : "待代理回传"}
-                      </p>
-                      <p className="mt-1 text-[11px] text-cyan-700">单击查看信息 · 双击修改信息</p>
+                      ))}
                     </div>
 
                     <span
@@ -711,29 +715,62 @@ export function QueuePanel({
                       )}
                     >
                       <span className={cx("h-1.5 w-1.5 rounded-full", levelDot(level))} />
-                      {shipment.status}
+                      {trackingCard.status}
                     </span>
                   </div>
 
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-slate-600 lg:grid-cols-4">
-                    <div className="rounded-md bg-slate-50 px-2.5 py-2">
-                      <p className="text-slate-400">ETD</p>
-                      <p className="mt-1 truncate font-medium tabular-nums text-slate-700">{shipment.etd}</p>
+                  <div className="mt-2 grid grid-cols-1 gap-2 rounded-lg bg-cyan-50/70 px-2.5 py-2 sm:grid-cols-2">
+                    <div className="min-w-0">
+                      <p className="text-[10px] leading-4 text-cyan-700">柜号</p>
+                      <a
+                        href={trackingCard.queryUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(event) => event.stopPropagation()}
+                        onDoubleClick={(event) => event.stopPropagation()}
+                        className="mt-0.5 block break-words text-sm font-semibold leading-5 text-slate-950 underline-offset-2 hover:text-cyan-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60"
+                      >
+                        {trackingCard.containerNo}
+                      </a>
                     </div>
-                    <div className="rounded-md bg-slate-50 px-2.5 py-2">
-                      <p className="text-slate-400">截补料</p>
-                      <p className="mt-1 truncate font-medium tabular-nums text-slate-700">{shipment.cutoffTime}</p>
-                    </div>
-                    <div className="rounded-md bg-slate-50 px-2.5 py-2">
-                      <p className="text-slate-400">负责人</p>
-                      <p className="mt-1 truncate font-medium text-slate-700">{shipment.operator}</p>
-                    </div>
-                    <div className="rounded-md bg-slate-50 px-2.5 py-2">
-                      <p className="text-slate-400">跟进</p>
-                      <p className="mt-1 font-medium tabular-nums text-slate-700">{shipment.followUpCount} 次</p>
+                    <div className="min-w-0">
+                      <p className="text-[10px] leading-4 text-cyan-700">SO号</p>
+                      <a
+                        href={trackingCard.queryUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(event) => event.stopPropagation()}
+                        onDoubleClick={(event) => event.stopPropagation()}
+                        className="mt-0.5 block break-words text-sm font-semibold leading-5 text-slate-950 underline-offset-2 hover:text-cyan-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60"
+                      >
+                        {trackingCard.soNo}
+                      </a>
                     </div>
                   </div>
-                </button>
+
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-600 min-[1420px]:grid-cols-4">
+                    <TrackingField label="订舱代理" value={trackingCard.bookingAgent} />
+                    <TrackingField label="海运费报价" value={trackingCard.oceanFreightPrice} />
+                    <TrackingField label="柜型" value={trackingCard.containerType} />
+                    <TrackingField label="船名 / 航次" value={trackingCard.vesselVoyage} />
+                    <TrackingField label="件数 / 毛重 / 体积" value={trackingCard.packageWeightVolume} />
+                    <TrackingField label="开船时间" value={trackingCard.etd} />
+                    <TrackingField label="到港时间" value={trackingCard.eta} />
+                    <TrackingField label="拖车行" value={trackingCard.truckingCompany} />
+                    <TrackingField label="报关行" value={trackingCard.customsBroker} />
+                    <div className="min-w-0 rounded-md bg-white/85 px-2.5 py-2 ring-1 ring-cyan-100/70">
+                      <p className="text-[10px] leading-4 text-slate-400">提单电放确认</p>
+                      <span className={cx("mt-1 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium", trackingCard.blTelexStatus.className)}>
+                        {trackingCard.blTelexStatus.label}
+                      </span>
+                    </div>
+                    <TrackingField label="当前状态" value={trackingCard.status} />
+                    <div className="min-w-0 rounded-md bg-white/85 px-2.5 py-2 ring-1 ring-cyan-100/70">
+                      <p className="text-[10px] leading-4 text-slate-400">操作</p>
+                      <p className="mt-0.5 break-words text-[11px] font-medium leading-4 text-cyan-700">单击查看 · 双击编辑</p>
+                    </div>
+                  </div>
+                </div>
               );
             })}
           </div>

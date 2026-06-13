@@ -55,6 +55,25 @@ export type ShipmentDetailGroup = {
   title: string;
 };
 
+export type BookingTrackingCard = {
+  batchNo: string;
+  blTelexStatus: { className: string; label: string };
+  bookingAgent: string;
+  containerNo: string;
+  containerType: string;
+  customsBroker: string;
+  cutoffPills: Array<{ label: string; value: string }>;
+  eta: string;
+  etd: string;
+  oceanFreightPrice: string;
+  packageWeightVolume: string;
+  queryUrl: string;
+  soNo: string;
+  status: string;
+  truckingCompany: string;
+  vesselVoyage: string;
+};
+
 export type BookingPlanCreateCheck = {
   canCreate: boolean;
   message: string;
@@ -216,6 +235,84 @@ export function buildShipmentDetailGroups(shipment: ShipmentRecord): ShipmentDet
       ],
     },
   ];
+}
+
+function displayValue(value: unknown) {
+  if (value === null || value === undefined) return "-";
+
+  const normalized = String(value).trim();
+  return normalized.length > 0 ? normalized : "-";
+}
+
+function splitVesselVoyage(value: string) {
+  const normalized = value.trim();
+  if (!normalized) return { vesselName: "", voyageNo: "" };
+
+  const parts = normalized.split(/\s+/);
+  if (parts.length === 1) return { vesselName: normalized, voyageNo: "" };
+
+  return {
+    vesselName: parts.slice(0, -1).join(" "),
+    voyageNo: parts[parts.length - 1] ?? "",
+  };
+}
+
+function blTelexStatusBadge(value: ShipmentRecord["blTelexStatus"]): BookingTrackingCard["blTelexStatus"] {
+  if (value === "已确认") {
+    return { className: "border-emerald-200 bg-emerald-50 text-emerald-700", label: "已确认" };
+  }
+
+  if (value === "待确认") {
+    return { className: "border-amber-200 bg-amber-50 text-amber-700", label: "待确认" };
+  }
+
+  return { className: "border-slate-200 bg-slate-50 text-slate-600", label: "未确认" };
+}
+
+function carrierTrackingUrl(carrier: string) {
+  const normalized = carrier.trim().toUpperCase();
+
+  if (normalized.includes("OOCL")) {
+    return "https://www.oocl.com/eng/ourservices/eservices/cargotracking/Pages/cargotracking.aspx";
+  }
+
+  if (normalized.includes("COSCO")) return "https://elines.coscoshipping.com/ebusiness/cargoTracking";
+  if (normalized.includes("MAERSK")) return "https://www.maersk.com/tracking";
+  if (normalized.includes("HAPAG")) return "https://www.hapag-lloyd.com/en/online-business/track/track-by-booking-solution.html";
+  if (normalized.includes("YML") || normalized.includes("YANG")) return "https://www.yangming.com/e-service/track_trace/track_trace_cargo_tracking.aspx";
+  if (normalized.includes("EMC") || normalized.includes("EVER")) return "https://ct.shipmentlink.com/servlet/TDB1_CargoTracking.do";
+
+  return "https://www.track-trace.com/container";
+}
+
+export function buildBookingTrackingCard(shipment: ShipmentRecord): BookingTrackingCard {
+  const fallbackVessel = splitVesselVoyage(shipment.vesselVoyage);
+  const vesselName = displayValue(shipment.vesselName?.trim() ? shipment.vesselName : fallbackVessel.vesselName);
+  const voyageNo = displayValue(shipment.voyageNo?.trim() ? shipment.voyageNo : fallbackVessel.voyageNo);
+  const soNo = shipment.soStatus === "待识别" && shipment.soNo.trim() ? "待代理回传" : displayValue(shipment.soNo);
+
+  return {
+    batchNo: displayValue(shipment.batchNo),
+    blTelexStatus: blTelexStatusBadge(shipment.blTelexStatus),
+    bookingAgent: displayValue(shipment.bookingAgent),
+    containerNo: displayValue(shipment.containerNo),
+    containerType: displayValue(shipment.containerType),
+    customsBroker: displayValue(shipment.customsBroker),
+    cutoffPills: [
+      { label: "截单", value: displayValue(shipment.cutoffTime) },
+      { label: "截重", value: displayValue(shipment.cutWeightTime) },
+      { label: "截关", value: displayValue(shipment.cutCustomsTime) },
+    ],
+    eta: displayValue(shipment.eta),
+    etd: displayValue(shipment.etd),
+    oceanFreightPrice: displayValue(shipment.oceanFreightPrice),
+    packageWeightVolume: [displayValue(shipment.packages), displayValue(shipment.grossWeight), displayValue(shipment.cbm)].join(" / "),
+    queryUrl: carrierTrackingUrl(shipment.carrier),
+    soNo,
+    status: displayValue(shipment.status),
+    truckingCompany: displayValue(shipment.truckingCompany),
+    vesselVoyage: `${vesselName} / ${voyageNo}`,
+  };
 }
 
 export function buildShipmentStatusEditDraft(shipment: ShipmentRecord): ShipmentStatusEditDraft {
