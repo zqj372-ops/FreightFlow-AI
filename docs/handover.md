@@ -1,5 +1,9 @@
 # FreightFlow AI Handover
 
+最后更新：2026-06-14
+当前分支：`codex/booking-plans-phase-1`
+最新提交：`6f28469 fix: compact tracking cards and edit on click`
+
 ## 1. 已完成功能
 
 - 已搭建 Next.js 16 + React 19 + TypeScript + Tailwind CSS 4 的前端项目骨架。
@@ -14,7 +18,22 @@
   - 搜索批次号 / SO / 柜号 / 船公司 / 目的港 / 操作员 / 状态
   - 按负责人筛选
   - 按红黄绿告警等级筛选
-  - 选中单柜后展示当前上下文
+  - 队列卡片已改为“订舱跟踪详情卡片”
+  - 单击队列卡片打开可编辑详情弹窗
+  - 已取消双击编辑逻辑
+  - 点击 SO / 柜号链接可跳到船公司查询页，且不会误触发卡片弹窗
+- 已完成订舱跟踪详情卡片第一版：
+  - 保留浅蓝色卡片风格，并压缩回接近早期队列卡片的高度
+  - 顶部展示批次号、截单 / 截重 / 截关灰色胶囊和当前状态标签
+  - 第二行突出展示柜号、SO号、订舱代理、海运费报价
+  - 中间表格展示柜型、船名 / 航次、件数 / 毛重 / 体积、ETD / ETA、拖车行、报关行、提单电放确认、当前状态
+  - 空字段统一显示 `-`，避免出现 `undefined` / `null`
+  - 提单电放确认状态按颜色区分：未确认灰色、待确认橙色、已确认绿色
+- 已完成订舱跟踪详情编辑弹窗：
+  - 标题为“订舱跟踪详情”
+  - 支持人工修正状态、SO状态、SO号、柜号、船公司、船名、航次、ETD、ETA、截单、截重、截关
+  - 支持人工录入海运费报价、件数、毛重、体积、拖车行、报关行、提单电放确认
+  - 保存后更新当前工作台内的 Shipment 状态
 - 已完成单柜动作流的前端状态推进：
   - 订舱邮件
   - 催单提醒
@@ -38,6 +57,17 @@
   - `POST /api/email-recognitions/[id]/review` 统一处理审核动作
   - SO 回传、补料确认、订舱/催单回复、异常邮件均需操作员确认后才写回 Shipment
   - 忽略动作只关闭识别项,不写回 Shipment
+- 已完成邮件同步入口和订舱机器人中台雏形：
+  - 邮件识别队列作为顶部二级页面入口
+  - 支持“同步邮箱”入口，当前仍为 mock 入队
+  - AI 副驾作为顶部入口，打开后进入对应二级工作区
+- 已完成订舱计划工作流前端能力：
+  - 顶部保留“新建订舱计划”快捷按钮
+  - 新建订舱计划使用弹窗表单，而不是跳转二级页面
+  - 支持批量生成订舱草稿
+  - 支持操作员手动确认后发送订舱邮件
+  - 支持等待代理放舱阶段生成内部批次号
+  - SO 信息等待代理回传后再由邮件识别写回
 - 已完成 `/api/ai/openclaw` 路由：
   - 未配置环境变量时返回 stub 响应
   - 配置 `OPENCLAW_API_URL` 后转发到外部服务
@@ -45,6 +75,14 @@
   - `GET /api/shipments`
   - `GET /api/shipments/[id]`
   - `POST /api/shipments/[id]/actions`
+  - `GET /api/booking-plans`
+  - `POST /api/booking-plans`
+  - `POST /api/booking-plans/batch-drafts`
+  - `GET /api/email-recognitions`
+  - `POST /api/email-sync/run`
+  - `POST /api/email-drafts/[draftId]/send`
+  - `GET /api/settings/email`
+  - `POST /api/settings/email`
   - `GET /api/contacts`
   - `POST /api/contacts`
 - 已完成 Prisma 数据层落库路径：
@@ -65,19 +103,31 @@
 ```text
 freightflow-ai/
 ├── docs/
-│   └── handover.md
+│   ├── business-rules.md
+│   ├── database.md
+│   ├── handover.md
+│   ├── master-plan.md
+│   ├── project-overview.md
+│   ├── superpowers/
+│   │   ├── plans/
+│   │   └── specs/
+│   └── todo.md
+├── prisma/
+│   ├── migrations/
+│   ├── schema.prisma
+│   └── seed.mjs
 ├── public/
-│   ├── file.svg
-│   ├── globe.svg
-│   ├── next.svg
-│   ├── vercel.svg
-│   └── window.svg
 ├── src/
 │   ├── app/
 │   │   ├── api/
-│   │   │   └── ai/
-│   │   │       └── openclaw/
-│   │   │           └── route.ts
+│   │   │   ├── ai/
+│   │   │   ├── booking-plans/
+│   │   │   ├── contacts/
+│   │   │   ├── email-drafts/
+│   │   │   ├── email-recognitions/
+│   │   │   ├── email-sync/
+│   │   │   ├── settings/
+│   │   │   └── shipments/
 │   │   ├── favicon.ico
 │   │   ├── globals.css
 │   │   ├── layout.tsx
@@ -86,10 +136,15 @@ freightflow-ai/
 │   │   └── workbench-shell.tsx
 │   ├── features/
 │   │   └── freightflow/
+│   │       ├── detail-panels.tsx
 │   │       ├── page-helpers.ts
+│   │       ├── page-helpers.test.ts
+│   │       ├── workbench-page.tsx
 │   │       └── shared-ui.tsx
 │   └── lib/
-│       └── mock-data.ts
+│       ├── freightflow-data.ts
+│       ├── mock-data.ts
+│       └── prisma.ts
 ├── .env.example
 ├── .gitignore
 ├── README.md
@@ -125,17 +180,28 @@ type ShipmentRecord = {
   soNo: string;
   containerNo: string;
   bookingAgent: string;
+  oceanFreightPrice?: string;
   carrier: string;
   originPort: string;
   transitPort: string;
   destinationPort: string;
   containerType: string;
+  vesselName?: string;
+  voyageNo?: string;
   vesselVoyage: string;
+  packages?: string;
+  grossWeight?: string;
+  cbm?: string;
   etd: string;
   eta: string;
   cutoffTime: string;
+  cutWeightTime?: string;
+  cutCustomsTime?: string;
   pickupLocation: string;
   returnLocation: string;
+  truckingCompany?: string;
+  customsBroker?: string;
+  blTelexStatus?: "未确认" | "待确认" | "已确认";
   status: ShipmentStatus;
   operator: string;
   followUpCount: number;
@@ -180,15 +246,26 @@ type ShipmentRecord = {
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/app/globals.css`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/ai/openclaw/route.ts`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/ai/openclaw/route.test.ts`
+- `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/booking-plans/route.ts`
+- `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/booking-plans/batch-drafts/route.ts`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/contacts/route.ts`
+- `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/email-drafts/[draftId]/send/route.ts`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/email-recognitions/[id]/review/route.ts`
+- `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/email-recognitions/route.ts`
+- `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/email-sync/run/route.ts`
+- `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/settings/email/route.ts`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/shipments/route.ts`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/shipments/[id]/route.ts`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/shipments/[id]/actions/route.ts`
+- `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/shipments/[id]/documents/so-recognition/route.ts`
+- `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/shipments/[id]/documents/supplement-template/route.ts`
+- `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/shipments/[id]/emails/route.ts`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/components/workbench-shell.tsx`
+- `/Users/autumn/Documents/Codex/freightflow-ai/src/features/freightflow/detail-panels.tsx`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/features/freightflow/page-helpers.ts`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/features/freightflow/page-helpers.test.ts`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/features/freightflow/shared-ui.tsx`
+- `/Users/autumn/Documents/Codex/freightflow-ai/src/features/freightflow/workbench-page.tsx`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/lib/mock-data.ts`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/lib/mock-data.test.ts`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/lib/freightflow-data.ts`
@@ -205,10 +282,12 @@ type ShipmentRecord = {
 - 本机尚无可用 PostgreSQL 服务,因此 Prisma migration / seed 未实际落库验证。
 - 前端主工作台尚未从 mock/useState 切到 shipment/contact API。
 - 真实 IMAP 拉信尚未接入识别服务,当前同步接口仍用 mock message 入队。
+- 邮件发送接口已有草稿发送路径，但真实 SMTP / 企业邮箱发送凭据尚未接入生产验证。
+- 订舱附件生成目前是前端/接口模拟预览，尚未接入真实文件模板、文件上传和对象存储。
 - 通讯录 API 已可持久化到 `contacts`,但 booking modal 尚未接入该 API。
 - AI 接口虽然有代理路由，但未验证真实 OpenClaw 服务的返回协议稳定性。
 - `OPENCLAW_API_URL`、`OPENCLAW_API_KEY` 仅预留，未形成完整部署说明。
-- 页面仍然较大，`src/app/page.tsx` 还没有完全拆成 feature-level 组件。
+- 页面已拆出 `workbench-page.tsx`、`detail-panels.tsx`、`workbench-shell.tsx` 等模块，但仍需继续收敛状态管理边界。
 - `src/features/freightflow/shared-ui.tsx` 中的 `ActionTile` 已创建，但当前主页面仍使用本地 `ActionTile` 实现，尚未统一。
 - 已有 Vitest 最小单测基线,但尚未配置覆盖率报告 / 覆盖率阈值。
 - 没有 E2E 测试。
@@ -219,7 +298,22 @@ type ShipmentRecord = {
 
 ## 6. 下一步建议
 
-### 6.1 先做数据层落地
+### 6.1 先做真实 IMAP / SMTP 闭环
+
+建议优先完成：
+
+1. 接入 IMAP 拉信并写入 email recognition 队列
+2. 接入 SMTP 或企业邮箱 API 发送订舱邮件
+3. 将“操作员确认后发送”记录成可审计日志
+4. 将 SO 回传邮件识别结果写回 Shipment
+
+优先级原因：
+
+- 当前产品核心是内部操作工作台 + 自动化机器人中台
+- 订舱邮件发送和代理 SO 回传是最小业务闭环
+- 没有真实邮箱接入时，只能做演示，不能进入试运营
+
+### 6.2 再做数据层落地
 
 建议优先完成：
 
@@ -232,7 +326,7 @@ type ShipmentRecord = {
 - 当前大部分交互已经可演示，但数据不可持久化
 - 如果继续堆前端能力而不落数据层，后续返工成本会更高
 
-### 6.2 再做页面拆分
+### 6.3 再做页面拆分
 
 建议将 `src/app/page.tsx` 继续拆分为：
 
@@ -248,7 +342,7 @@ type ShipmentRecord = {
 - 拆分时先抽纯展示组件，再抽交互逻辑
 - booking modal 和 AI panel 都已经有较多状态，适合独立为 feature 组件
 
-### 6.3 统一共享组件边界
+### 6.4 统一共享组件边界
 
 建议下一轮整理时：
 
@@ -258,7 +352,7 @@ type ShipmentRecord = {
   - freightflow feature helper
   - 全局 UI helper
 
-### 6.4 扩展测试基线
+### 6.5 扩展测试基线
 
 已完成最小基线：
 
@@ -273,7 +367,7 @@ type ShipmentRecord = {
 - API 数据层在 mock/stub DB 下的单测
 - Playwright E2E 覆盖订舱主链路
 
-### 6.5 真实业务接入顺序建议
+### 6.6 真实业务接入顺序建议
 
 推荐顺序：
 
@@ -284,6 +378,26 @@ type ShipmentRecord = {
 5. SO / 补料 / 申报文档流
 6. AI 请求审计与历史记录
 
+## 7. 最近验证记录
+
+最近一次推送前验证：
+
+```text
+npm test      -> 8 files passed, 63 tests passed
+npm run lint  -> passed
+npm run build -> passed
+```
+
+最近相关提交：
+
+```text
+6f28469 fix: compact tracking cards and edit on click
+246964a feat: show booking tracking details in queue cards
+d100f59 fix: use modals for booking and shipment details
+6174ed1 fix: keep queue page focused on shipment list
+e466fcf feat: defer SO entry until release recognition
+```
+
 ## 补充说明
 
 - 当前项目可以正常构建，最近一次验证已通过 `npm run build`。
@@ -292,7 +406,7 @@ type ShipmentRecord = {
 - 当前 `npm run prisma:seed` 因本机 PostgreSQL 不可达失败:`P1001 Can't reach database server at 127.0.0.1:5432`。
 - 当前项目更接近“高保真前端操作台原型 + AI 代理入口”，还不是完整的生产业务系统。
 
-## 7. 变更日志
+## 8. 变更日志
 
 ### 2026-06-11 · P0 / 数据层/API / shipments 与 contacts
 
