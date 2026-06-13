@@ -3,6 +3,15 @@ import type { ShipmentRecord } from "@/lib/mock-data";
 import type { BookingDraftBatchResult, BookingPlanRecord } from "./booking-plan-rules";
 import type { BookingDraft, ContactRecord, DetailActionLabel } from "./page-helpers";
 
+export type EmailDraftRecord = BookingDraft & {
+  createdAt?: string;
+  id: string;
+  lastError: string | null;
+  shipmentId: string;
+  status: "draft" | "failed" | "pending_review" | "sent";
+  updatedAt?: string;
+};
+
 export type EmailRecognitionQueueItem = {
   bodyPreview: string;
   confidence: number;
@@ -177,6 +186,52 @@ export async function batchGenerateBookingDrafts(shipmentIds: string[]) {
 
   if (!response.ok || !payload.data) {
     throw new Error(payload.error ?? "Failed to generate booking drafts.");
+  }
+
+  return {
+    data: payload.data,
+    source: payload.source ?? "database",
+  };
+}
+
+export async function loadEmailDraftFromApi(draftId: string) {
+  const response = await fetch(`/api/email-drafts/${encodeURIComponent(draftId)}`, { cache: "no-store" });
+  const payload = await readJson<EmailDraftRecord>(response);
+
+  if (!response.ok || !payload.data) {
+    throw new Error(payload.error ?? "Failed to load email draft.");
+  }
+
+  return {
+    data: payload.data,
+    source: payload.source ?? "database",
+  };
+}
+
+export async function updateEmailDraftFromApi(draftId: string, draft: Partial<BookingDraft>) {
+  const response = await fetch(`/api/email-drafts/${encodeURIComponent(draftId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(draft),
+  });
+  const payload = await readJson<EmailDraftRecord>(response);
+
+  if (!response.ok || !payload.data) {
+    throw new Error(payload.error ?? "Failed to update email draft.");
+  }
+
+  return {
+    data: payload.data,
+    source: payload.source ?? "database",
+  };
+}
+
+export async function sendEmailDraftFromApi(draftId: string) {
+  const response = await fetch(`/api/email-drafts/${encodeURIComponent(draftId)}/send`, { method: "POST" });
+  const payload = await readJson<unknown>(response);
+
+  if (!response.ok || !payload.data) {
+    throw new Error(payload.error ?? "Failed to send email draft.");
   }
 
   return {

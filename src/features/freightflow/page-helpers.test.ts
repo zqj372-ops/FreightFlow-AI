@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { shipments } from "@/lib/mock-data";
 import {
   buildBookingDraft,
+  buildBookingFormDraft,
+  buildBookingPlanAttachmentPreview,
   buildContacts,
+  buildPostBookingSendState,
   buildShipmentBrief,
   buildShipmentDetailGroups,
   canCreateBookingPlanFromShipment,
@@ -158,5 +161,50 @@ describe("canCreateBookingPlanFromShipment", () => {
     const result = canCreateBookingPlanFromShipment({ ...shipments[0], mailStatus: "已发送" });
 
     expect(result).toEqual({ canCreate: false, message: "订舱邮件已发送" });
+  });
+});
+
+describe("buildBookingFormDraft", () => {
+  it("builds editable booking plan form defaults from the selected shipment", () => {
+    const form = buildBookingFormDraft(shipments[0]);
+
+    expect(form).toEqual({
+      bookingAgent: "Seabay Logistics",
+      carrier: "OOCL",
+      containerType: "40HQ",
+      destinationPort: "Vancouver",
+      etd: "2026-06-12 23:00",
+      originPort: "Yantian",
+      pickupLocation: "Yantian Depot 3",
+      remarks: "请协助订舱并回传 SO / 放舱确认。",
+      returnLocation: "Yantian Terminal 7",
+      vesselVoyage: "OOCL Rauma 068E",
+    });
+  });
+});
+
+describe("buildBookingPlanAttachmentPreview", () => {
+  it("creates an attachment filename and human-readable booking request preview", () => {
+    const preview = buildBookingPlanAttachmentPreview(shipments[0], buildBookingFormDraft(shipments[0]));
+
+    expect(preview.fileName).toBe("FF-CA-240610-A01-booking-request.html");
+    expect(preview.lines).toContain("批次号：FF-CA-240610-A01");
+    expect(preview.lines).toContain("船公司：OOCL");
+    expect(preview.lines).toContain("备注：请协助订舱并回传 SO / 放舱确认。");
+    expect(preview.html).toContain("<h1>订舱申请</h1>");
+    expect(preview.html).toContain("FF-CA-240610-A01");
+  });
+});
+
+describe("buildPostBookingSendState", () => {
+  it("moves the shipment into waiting for SO after manual booking email confirmation", () => {
+    const next = buildPostBookingSendState(shipments[0], "2026-06-13 20:00");
+
+    expect(next.mailStatus).toBe("已发送");
+    expect(next.status).toBe("等待放舱");
+    expect(next.soStatus).toBe("待识别");
+    expect(next.lastEmailTime).toBe("2026-06-13 20:00");
+    expect(next.nextAction).toBe("等待代理回传 SO 信息，IMAP 识别后人工确认写回。");
+    expect(next.reminderFlags).toContain("等待 SO 回传");
   });
 });

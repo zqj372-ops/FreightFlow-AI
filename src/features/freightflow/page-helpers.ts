@@ -60,6 +60,25 @@ export type BookingPlanCreateCheck = {
   message: string;
 };
 
+export type BookingFormDraft = {
+  bookingAgent: string;
+  carrier: string;
+  containerType: string;
+  destinationPort: string;
+  etd: string;
+  originPort: string;
+  pickupLocation: string;
+  remarks: string;
+  returnLocation: string;
+  vesselVoyage: string;
+};
+
+export type BookingPlanAttachmentPreview = {
+  fileName: string;
+  html: string;
+  lines: string[];
+};
+
 export const contactRoleLabel: Record<ContactRole, string> = {
   booking_agent: "订舱代理",
   customs: "报关 / 单证",
@@ -203,6 +222,83 @@ export function canCreateBookingPlanFromShipment(shipment: ShipmentRecord): Book
   }
 
   return { canCreate: true, message: "可新建订舱计划并生成中文草稿" };
+}
+
+export function buildBookingFormDraft(shipment: ShipmentRecord): BookingFormDraft {
+  return {
+    bookingAgent: shipment.bookingAgent,
+    carrier: shipment.carrier,
+    containerType: shipment.containerType,
+    destinationPort: shipment.destinationPort,
+    etd: shipment.etd,
+    originPort: shipment.originPort,
+    pickupLocation: shipment.pickupLocation,
+    remarks: "请协助订舱并回传 SO / 放舱确认。",
+    returnLocation: shipment.returnLocation,
+    vesselVoyage: shipment.vesselVoyage,
+  };
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+export function buildBookingPlanAttachmentPreview(
+  shipment: ShipmentRecord,
+  form: BookingFormDraft,
+): BookingPlanAttachmentPreview {
+  const lines = [
+    `批次号：${shipment.batchNo}`,
+    `SO：${shipment.soNo}`,
+    `柜号：${shipment.containerNo}`,
+    `订舱代理：${form.bookingAgent}`,
+    `船公司：${form.carrier}`,
+    `柜型：${form.containerType}`,
+    `起运港：${form.originPort}`,
+    `目的港：${form.destinationPort}`,
+    `预计 ETD：${form.etd}`,
+    `船名航次：${form.vesselVoyage}`,
+    `提柜地点：${form.pickupLocation}`,
+    `还柜地点：${form.returnLocation}`,
+    `备注：${form.remarks}`,
+  ];
+
+  return {
+    fileName: `${shipment.batchNo}-booking-request.html`,
+    html: [
+      "<!doctype html>",
+      '<html lang="zh-CN">',
+      "<head><meta charset=\"utf-8\"><title>订舱申请</title></head>",
+      "<body>",
+      "<h1>订舱申请</h1>",
+      "<dl>",
+      ...lines.map((line) => {
+        const [label, ...rest] = line.split("：");
+        return `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(rest.join("："))}</dd>`;
+      }),
+      "</dl>",
+      "</body>",
+      "</html>",
+    ].join("\n"),
+    lines,
+  };
+}
+
+export function buildPostBookingSendState(shipment: ShipmentRecord, sentAt: string): ShipmentRecord {
+  return {
+    ...shipment,
+    lastEmailTime: sentAt,
+    mailStatus: "已发送",
+    nextAction: "等待代理回传 SO 信息，IMAP 识别后人工确认写回。",
+    reminderFlags: Array.from(new Set(["等待 SO 回传", ...shipment.reminderFlags])),
+    soStatus: "待识别",
+    status: "等待放舱",
+  };
 }
 
 export function levelDot(level: AlertLevel) {

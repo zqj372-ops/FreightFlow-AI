@@ -38,8 +38,11 @@ type SummaryData = {
 
 type SidebarNavProps = {
   activeNav: string;
+  activeSubNav?: string;
+  bookingSubNavItems?: string[];
   onOpenSettings?: () => void;
   onSelect: (item: string) => void;
+  onSelectSubNav?: (item: string) => void;
   summary: SummaryData;
 };
 
@@ -214,7 +217,15 @@ const metricCards = [
   },
 ] as const;
 
-export function SidebarNav({ activeNav, onOpenSettings, onSelect, summary }: SidebarNavProps) {
+export function SidebarNav({
+  activeNav,
+  activeSubNav,
+  bookingSubNavItems = [],
+  onOpenSettings,
+  onSelect,
+  onSelectSubNav,
+  summary,
+}: SidebarNavProps) {
   return (
     <aside className="border-b border-slate-200 bg-slate-950 text-slate-100 xl:min-h-dvh xl:border-b-0 xl:border-r">
       <div className="flex items-center justify-between gap-3 px-4 py-4 xl:flex-col xl:items-stretch xl:px-4 xl:py-5">
@@ -257,40 +268,65 @@ export function SidebarNav({ activeNav, onOpenSettings, onSelect, summary }: Sid
             const badge = item === "异常中心" ? `${summary.redAlerts}` : navSecondaryBadges[item];
 
             return (
-              <button
-                key={item}
-                type="button"
-                onClick={() => (item === "设置" ? onOpenSettings?.() ?? onSelect(item) : onSelect(item))}
-                className={cx(
-                  "flex min-h-11 items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70 xl:min-h-10 xl:justify-between xl:gap-2 xl:border-transparent",
-                  isActive
-                    ? "border-cyan-400/30 bg-cyan-500/15 text-white"
-                    : "border-slate-800 bg-slate-950 text-slate-300 hover:border-slate-700 hover:bg-slate-900 hover:text-white",
-                )}
-              >
-                <div className="flex min-w-0 items-center gap-3">
-                  <Icon className={cx("h-4 w-4 shrink-0", isActive ? "text-cyan-300" : "text-slate-500")} />
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{item}</p>
-                    <p className="mt-0.5 hidden truncate text-[11px] text-slate-500 xl:block">{meta.description}</p>
-                  </div>
-                </div>
-
-                {badge ? (
-                  <span
+              <div key={item} className="min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => (item === "设置" ? onOpenSettings?.() ?? onSelect(item) : onSelect(item))}
                     className={cx(
-                      "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium",
-                      item === "异常中心"
-                        ? isActive
-                          ? "bg-red-500/20 text-red-200"
-                          : "bg-red-500/15 text-red-300"
-                        : "bg-slate-800 text-slate-300",
+                      "flex min-h-11 w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70 xl:min-h-10 xl:justify-between xl:gap-2 xl:border-transparent",
+                      isActive
+                        ? "border-cyan-400/30 bg-cyan-500/15 text-white"
+                        : "border-slate-800 bg-slate-950 text-slate-300 hover:border-slate-700 hover:bg-slate-900 hover:text-white",
                     )}
                   >
-                    {badge}
-                  </span>
-                ) : null}
-              </button>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <Icon className={cx("h-4 w-4 shrink-0", isActive ? "text-cyan-300" : "text-slate-500")} />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{item}</p>
+                        <p className="mt-0.5 hidden truncate text-[11px] text-slate-500 xl:block">{meta.description}</p>
+                      </div>
+                    </div>
+
+                    {badge ? (
+                      <span
+                        className={cx(
+                          "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium",
+                          item === "异常中心"
+                            ? isActive
+                              ? "bg-red-500/20 text-red-200"
+                              : "bg-red-500/15 text-red-300"
+                            : "bg-slate-800 text-slate-300",
+                        )}
+                      >
+                        {badge}
+                      </span>
+                    ) : null}
+                  </button>
+
+                  {item === "订舱工作台" && isActive && bookingSubNavItems.length > 0 ? (
+                    <div className="mt-1.5 space-y-1 rounded-lg border border-slate-800 bg-slate-900/70 p-1.5">
+                      {bookingSubNavItems.map((subItem) => {
+                        const subActive = activeSubNav === subItem;
+
+                        return (
+                          <button
+                            key={subItem}
+                            type="button"
+                            onClick={() => onSelectSubNav?.(subItem)}
+                            className={cx(
+                              "flex min-h-9 w-full items-center rounded-md px-3 text-left text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70",
+                              subActive
+                                ? "bg-cyan-500/20 text-cyan-100"
+                                : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
+                            )}
+                          >
+                            {subItem}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+              </div>
             );
           })}
         </nav>
