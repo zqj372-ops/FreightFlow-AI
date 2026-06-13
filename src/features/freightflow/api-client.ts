@@ -1,5 +1,6 @@
 import type { ShipmentRecord } from "@/lib/mock-data";
 
+import type { BookingDraftBatchResult, BookingPlanRecord } from "./booking-plan-rules";
 import type { BookingDraft, ContactRecord, DetailActionLabel } from "./page-helpers";
 
 type ApiEnvelope<T> = {
@@ -117,6 +118,39 @@ export async function loadContactsFromApi(): Promise<ApiLoadResult<ContactRecord
     data: payload.data,
     source: payload.source ?? "database",
     warning: payload.warning,
+  };
+}
+
+export async function loadBookingPlansFromApi(): Promise<ApiLoadResult<BookingPlanRecord[]>> {
+  const response = await fetch("/api/booking-plans", { cache: "no-store" });
+  const payload = await readJson<BookingPlanRecord[]>(response);
+
+  if (!response.ok || !payload.data) {
+    throw new Error(payload.error ?? "Failed to load booking plans.");
+  }
+
+  return {
+    data: payload.data,
+    source: payload.source ?? "database",
+    warning: payload.warning,
+  };
+}
+
+export async function batchGenerateBookingDrafts(shipmentIds: string[]) {
+  const response = await fetch("/api/booking-plans/batch-drafts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ shipmentIds }),
+  });
+  const payload = await readJson<BookingDraftBatchResult & { batchId?: string }>(response);
+
+  if (!response.ok || !payload.data) {
+    throw new Error(payload.error ?? "Failed to generate booking drafts.");
+  }
+
+  return {
+    data: payload.data,
+    source: payload.source ?? "database",
   };
 }
 

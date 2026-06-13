@@ -714,3 +714,13 @@ type ShipmentRecord = {
   - `npx tsc --noEmit --incremental false` 通过
   - `npm test` 通过,4 个测试文件 / 29 个用例
   - `npm run build` 通过
+# 2026-06-13 · 待发订舱计划 Phase 1
+
+- 新增产品设计文档: `docs/superpowers/specs/2026-06-13-freightflow-ai-ops-mail-workbench-design.md`。
+- 新增实施计划: `docs/superpowers/plans/2026-06-13-booking-plans-phase-1.md`。
+- 新增待发订舱计划纯规则: `src/features/freightflow/booking-plan-rules.ts`,覆盖资料完整度、中文订舱草稿和批量结果统计。
+- 新增待发订舱计划面板: `src/features/freightflow/booking-plan-panel.tsx`,工作台可查看待处理、可生成、草稿待确认数量并批量生成草稿。
+- 新增 Prisma 模型和迁移: `booking_plans`, `email_drafts`, `booking_draft_batches`。
+- 新增 API: `GET /api/booking-plans`, `POST /api/booking-plans/batch-drafts`, `GET/PATCH /api/email-drafts/[draftId]`, `POST /api/email-drafts/[draftId]/send`。
+- 重要边界:批量操作只生成中文订舱草稿,不会自动发送;发送仍走单票人工确认。
+- 验证: `npm run prisma:validate`, `npm run lint`, `npm test`, `npm run build` 均通过。

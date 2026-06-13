@@ -7,25 +7,25 @@ datasource db {
 }
 
 enum ShipmentStatus {
-  BOOKING_SENT             @map("已发送订舱")
-  WAITING_RELEASE          @map("等待放舱")
-  RELEASE_FOLLOWED_UP      @map("已催放舱")
-  RELEASED                 @map("已放舱")
-  PENDING_DOCUMENTS        @map("待补料")
-  DOCUMENTS_SENT           @map("已发送补料")
-  DOCUMENTS_CONFIRMING     @map("等待补料确认")
-  DOCUMENTS_CONFIRMED      @map("补料已确认")
-  PENDING_CUSTOMS          @map("待报关")
-  CUSTOMS_DECLARED         @map("已报关")
-  PENDING_PICKUP           @map("待提柜")
-  PICKED_UP                @map("已提柜")
-  LOADED                   @map("已装柜")
-  RETURNED                 @map("已还柜")
-  SAILED                   @map("已开船")
-  ARRIVED                  @map("已到港")
-  SIGNED                   @map("已签收")
-  COMPLETED                @map("已完成")
-  EXCEPTION_PROCESSING     @map("异常处理中")
+  BOOKING_SENT         @map("已发送订舱")
+  WAITING_RELEASE      @map("等待放舱")
+  RELEASE_FOLLOWED_UP  @map("已催放舱")
+  RELEASED             @map("已放舱")
+  PENDING_DOCUMENTS    @map("待补料")
+  DOCUMENTS_SENT       @map("已发送补料")
+  DOCUMENTS_CONFIRMING @map("等待补料确认")
+  DOCUMENTS_CONFIRMED  @map("补料已确认")
+  PENDING_CUSTOMS      @map("待报关")
+  CUSTOMS_DECLARED     @map("已报关")
+  PENDING_PICKUP       @map("待提柜")
+  PICKED_UP            @map("已提柜")
+  LOADED               @map("已装柜")
+  RETURNED             @map("已还柜")
+  SAILED               @map("已开船")
+  ARRIVED              @map("已到港")
+  SIGNED               @map("已签收")
+  COMPLETED            @map("已完成")
+  EXCEPTION_PROCESSING @map("异常处理中")
 }
 
 enum AlertLevel {
@@ -35,9 +35,9 @@ enum AlertLevel {
 }
 
 enum DocumentProgressStatus {
-  PENDING      @map("待处理")
-  DRAFT_READY  @map("草稿完成")
-  SENT         @map("已发送")
+  PENDING     @map("待处理")
+  DRAFT_READY @map("草稿完成")
+  SENT        @map("已发送")
 }
 
 enum MailStatus {
@@ -76,60 +76,83 @@ enum ShipmentActionType {
 
 enum ActionSource {
   UI
-  AI      @map("AI")
-  SYSTEM  @map("SYSTEM")
+  AI     @map("AI")
+  SYSTEM @map("SYSTEM")
 
   @@map("action_source")
 }
 
 enum AiRequestStatus {
-  IDLE     @map("idle")
-  LOADING  @map("loading")
-  SUCCESS  @map("success")
-  ERROR    @map("error")
+  IDLE    @map("idle")
+  LOADING @map("loading")
+  SUCCESS @map("success")
+  ERROR   @map("error")
 }
 
 enum EmailRecipientType {
-  TO  @map("to")
-  CC  @map("cc")
+  TO @map("to")
+  CC @map("cc")
+}
+
+enum BookingPlanStatus {
+  MISSING_INFO   @map("missing_info")
+  READY_TO_DRAFT @map("ready_to_draft")
+  DRAFT_READY    @map("draft_ready")
+  SEND_FAILED    @map("send_failed")
+  SENT           @map("sent")
+}
+
+enum EmailDraftType {
+  BOOKING    @map("booking")
+  FOLLOW_UP  @map("follow_up")
+  SUPPLEMENT @map("supplement")
+}
+
+enum EmailDraftStatus {
+  DRAFT          @map("draft")
+  PENDING_REVIEW @map("pending_review")
+  SENT           @map("sent")
+  FAILED         @map("failed")
 }
 
 model Shipment {
-  id                   String                   @id @db.VarChar(64)
-  batchNo              String                   @unique @db.VarChar(64)
-  soNo                 String                   @db.VarChar(64)
-  containerNo          String                   @db.VarChar(64)
-  bookingAgent         String                   @db.VarChar(128)
-  carrier              String                   @db.VarChar(128)
-  originPort           String                   @db.VarChar(128)
-  transitPort          String                   @default("") @db.VarChar(128)
-  destinationPort      String                   @db.VarChar(128)
-  containerType        String                   @db.VarChar(32)
-  vesselVoyage         String                   @db.VarChar(128)
-  etd                  DateTime
-  eta                  DateTime
-  cutoffTime           DateTime
-  pickupLocation       String                   @db.VarChar(128)
-  returnLocation       String                   @db.VarChar(128)
-  status               ShipmentStatus
-  operator             String                   @db.VarChar(128)
-  followUpCount        Int                      @default(0)
-  lastEmailTime        DateTime?
-  hoursWaitingRelease  Int                      @default(0)
-  hoursToCutoff        Int
-  aiSummary            String                   @db.Text
-  nextAction           String                   @db.Text
-  alertLevel           AlertLevel?
-  mailStatus           MailStatus
-  soStatus             SoStatus
-  documentStatus       ShipmentDocumentStatus
-  createdAt            DateTime                 @default(now())
-  updatedAt            DateTime                 @updatedAt
-  documentProgress     ShipmentDocumentProgress?
-  exceptions           ShipmentException[]
-  reminderFlags        ShipmentReminderFlag[]
-  actionLogs           ShipmentActionLog[]
-  emailLogs            ShipmentEmailLog[]
+  id                  String                    @id @db.VarChar(64)
+  batchNo             String                    @unique @db.VarChar(64)
+  soNo                String                    @db.VarChar(64)
+  containerNo         String                    @db.VarChar(64)
+  bookingAgent        String                    @db.VarChar(128)
+  carrier             String                    @db.VarChar(128)
+  originPort          String                    @db.VarChar(128)
+  transitPort         String                    @default("") @db.VarChar(128)
+  destinationPort     String                    @db.VarChar(128)
+  containerType       String                    @db.VarChar(32)
+  vesselVoyage        String                    @db.VarChar(128)
+  etd                 DateTime
+  eta                 DateTime
+  cutoffTime          DateTime
+  pickupLocation      String                    @db.VarChar(128)
+  returnLocation      String                    @db.VarChar(128)
+  status              ShipmentStatus
+  operator            String                    @db.VarChar(128)
+  followUpCount       Int                       @default(0)
+  lastEmailTime       DateTime?
+  hoursWaitingRelease Int                       @default(0)
+  hoursToCutoff       Int
+  aiSummary           String                    @db.Text
+  nextAction          String                    @db.Text
+  alertLevel          AlertLevel?
+  mailStatus          MailStatus
+  soStatus            SoStatus
+  documentStatus      ShipmentDocumentStatus
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @updatedAt
+  documentProgress    ShipmentDocumentProgress?
+  exceptions          ShipmentException[]
+  reminderFlags       ShipmentReminderFlag[]
+  actionLogs          ShipmentActionLog[]
+  emailLogs           ShipmentEmailLog[]
+  bookingPlan         BookingPlan?
+  emailDrafts         EmailDraft[]
 
   @@index([status])
   @@index([operator])
@@ -138,67 +161,126 @@ model Shipment {
   @@map("shipments")
 }
 
+model BookingPlan {
+  id                     String             @id @default(cuid())
+  shipmentId             String             @unique @db.VarChar(64)
+  planStatus             BookingPlanStatus
+  requiredFieldsSnapshot Json
+  preferredBookingAgent  String?            @db.VarChar(128)
+  plannedSendAt          DateTime?
+  lastDraftId            String?
+  lastBatchId            String?
+  lastError              String?            @db.Text
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  shipment               Shipment           @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  lastDraft              EmailDraft?        @relation("BookingPlanLastDraft", fields: [lastDraftId], references: [id], onDelete: SetNull)
+  lastBatch              BookingDraftBatch? @relation(fields: [lastBatchId], references: [id], onDelete: SetNull)
+  drafts                 EmailDraft[]       @relation("BookingPlanDrafts")
+
+  @@index([planStatus])
+  @@index([plannedSendAt])
+  @@map("booking_plans")
+}
+
+model EmailDraft {
+  id                String           @id @default(cuid())
+  shipmentId        String           @db.VarChar(64)
+  draftType         EmailDraftType
+  to                Json
+  cc                Json
+  subject           String           @db.VarChar(255)
+  body              String           @db.Text
+  attachments       Json
+  status            EmailDraftStatus
+  createdFromPlanId String?
+  lastError         String?          @db.Text
+  sentEmailLogId    String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  shipment          Shipment         @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  createdFromPlan   BookingPlan?     @relation("BookingPlanDrafts", fields: [createdFromPlanId], references: [id], onDelete: SetNull)
+  currentForPlans   BookingPlan[]    @relation("BookingPlanLastDraft")
+
+  @@index([shipmentId, status])
+  @@index([draftType, status])
+  @@map("email_drafts")
+}
+
+model BookingDraftBatch {
+  id                  String        @id @default(cuid())
+  createdBy           String?       @db.VarChar(128)
+  selectedShipmentIds Json
+  successCount        Int           @default(0)
+  skippedCount        Int           @default(0)
+  failedCount         Int           @default(0)
+  createdAt           DateTime      @default(now())
+  bookingPlans        BookingPlan[]
+
+  @@map("booking_draft_batches")
+}
+
 model ShipmentDocumentProgress {
-  shipmentId  String                 @id @db.VarChar(64)
-  ams         DocumentProgressStatus
-  aci         DocumentProgressStatus
-  isf         DocumentProgressStatus
-  createdAt   DateTime               @default(now())
-  updatedAt   DateTime               @updatedAt
-  shipment    Shipment               @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  shipmentId String                 @id @db.VarChar(64)
+  ams        DocumentProgressStatus
+  aci        DocumentProgressStatus
+  isf        DocumentProgressStatus
+  createdAt  DateTime               @default(now())
+  updatedAt  DateTime               @updatedAt
+  shipment   Shipment               @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
 
   @@map("shipment_document_progress")
 }
 
 model ShipmentException {
-  id          String    @id @default(cuid())
-  shipmentId  String    @db.VarChar(64)
-  message     String    @db.Text
-  sortOrder   Int       @default(0)
-  createdAt   DateTime  @default(now())
-  shipment    Shipment  @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  id         String   @id @default(cuid())
+  shipmentId String   @db.VarChar(64)
+  message    String   @db.Text
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  shipment   Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
 
   @@index([shipmentId, sortOrder])
   @@map("shipment_exceptions")
 }
 
 model ShipmentReminderFlag {
-  id          String    @id @default(cuid())
-  shipmentId  String    @db.VarChar(64)
-  message     String    @db.Text
-  sortOrder   Int       @default(0)
-  createdAt   DateTime  @default(now())
-  shipment    Shipment  @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  id         String   @id @default(cuid())
+  shipmentId String   @db.VarChar(64)
+  message    String   @db.Text
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  shipment   Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
 
   @@index([shipmentId, sortOrder])
   @@map("shipment_reminder_flags")
 }
 
 model Contact {
-  id          String      @id @default(cuid())
-  email       String      @unique @db.VarChar(255)
-  label       String      @db.VarChar(128)
-  role        ContactRole
-  isActive    Boolean     @default(true)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  id        String      @id @default(cuid())
+  email     String      @unique @db.VarChar(255)
+  label     String      @db.VarChar(128)
+  role      ContactRole
+  isActive  Boolean     @default(true)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
 
   @@index([role])
   @@map("contacts")
 }
 
 model ShipmentActionLog {
-  id               String              @id @default(cuid())
-  shipmentId       String              @db.VarChar(64)
-  actionType       ShipmentActionType
-  source           ActionSource        @default(UI)
-  actorName        String?             @db.VarChar(128)
-  actorEmail       String?             @db.VarChar(255)
-  summary          String              @db.Text
-  beforeSnapshot   Json?
-  afterSnapshot    Json?
-  createdAt        DateTime            @default(now())
-  shipment         Shipment            @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  id             String             @id @default(cuid())
+  shipmentId     String             @db.VarChar(64)
+  actionType     ShipmentActionType
+  source         ActionSource       @default(UI)
+  actorName      String?            @db.VarChar(128)
+  actorEmail     String?            @db.VarChar(255)
+  summary        String             @db.Text
+  beforeSnapshot Json?
+  afterSnapshot  Json?
+  createdAt      DateTime           @default(now())
+  shipment       Shipment           @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
 
   @@index([shipmentId, createdAt])
   @@index([actionType])
@@ -206,15 +288,15 @@ model ShipmentActionLog {
 }
 
 model ShipmentEmailLog {
-  id               String               @id @default(cuid())
-  shipmentId       String               @db.VarChar(64)
-  subject          String               @db.VarChar(255)
-  body             String               @db.Text
-  attachmentName   String?              @db.VarChar(255)
-  sentAt           DateTime?
-  createdAt        DateTime             @default(now())
-  shipment         Shipment             @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
-  recipients       ShipmentEmailRecipient[]
+  id             String                   @id @default(cuid())
+  shipmentId     String                   @db.VarChar(64)
+  subject        String                   @db.VarChar(255)
+  body           String                   @db.Text
+  attachmentName String?                  @db.VarChar(255)
+  sentAt         DateTime?
+  createdAt      DateTime                 @default(now())
+  shipment       Shipment                 @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  recipients     ShipmentEmailRecipient[]
 
   @@index([shipmentId, createdAt])
   @@map("shipment_email_logs")

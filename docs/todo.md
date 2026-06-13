@@ -48,6 +48,9 @@
 ### 2.1 真实邮件发送(P0)
 
 - 状态:已完成最小邮件发送抽象、本地 mock provider、SMTP provider 与 IMAP 连接验证。
+- 状态:已新增待发订舱计划第一版,支持按资料完整度筛选可生成草稿的 Shipment,并批量生成中文订舱草稿。
+- 状态:已新增订舱计划/草稿 API: `GET /api/booking-plans`, `POST /api/booking-plans/batch-drafts`, `GET/PATCH /api/email-drafts/[draftId]`, `POST /api/email-drafts/[draftId]/send`。
+- 状态:工作台已显示"待发订舱计划"面板;批量操作只生成草稿,不自动对外发送邮件。
 - 已新增 `src/lib/services/email/*`,包含 provider 接口、mock provider、SMTP provider、IMAP verifier、输入校验、`shipment_email_logs` / `shipment_email_recipients` 保存服务。
 - 已新增 `GET/POST /api/settings/email`,左侧“设置”可维护 IMAP/SMTP host、port、SSL/TLS、用户名、授权码、发件人和 Reply-To。
 - `POST /api/settings/email` 带 `test: true` 时会同时测试 SMTP 与 IMAP 连接。
@@ -55,7 +58,7 @@
 - 已新增 `POST /api/shipments/[shipmentId]/emails`,接收 `subject / body / attachmentName / to / cc / recipients`,先走 mock provider,再按 Prisma schema 保存 email log 与 recipients。
 - 仍需在真实邮箱服务商后台开启 IMAP/SMTP 服务并填写授权码。候选:腾讯企业邮箱 / 自建 SMTP / 第三方服务。
 - booking modal "发送"已接入 `/api/shipments/[id]/emails`,会优先调用邮件服务;数据库不可用或 shipment 未落库时回退本地演示状态,并继续后台尝试记录 `订舱邮件` action。
-- 剩余验收:填入真实邮箱 IMAP/SMTP 配置并保存测试通过;真实 PostgreSQL migration/seed 后,确认邮件 API 可保存 `shipment_email_logs` / `shipment_email_recipients`,并确认 UI 刷新后邮件状态与日志一致。
+- 剩余验收:填入真实邮箱 IMAP/SMTP 配置并保存测试通过;真实 PostgreSQL migration/seed 后,确认待发订舱计划、草稿、邮件 API 可持久化,并确认 UI 刷新后计划、草稿、邮件状态与日志一致。
 - 最终验收:订舱邮件真发出,`shipment_email_logs` 有记录,`shipment_email_recipients` 按 `TO / CC` 落库。
 
 ### 2.2 SO / 补料 / 申报文档流(P1)

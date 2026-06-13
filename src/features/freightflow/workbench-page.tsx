@@ -45,6 +45,8 @@ import {
 } from "@/features/freightflow/page-helpers";
 import {
   loadContactsFromApi,
+  batchGenerateBookingDrafts,
+  loadBookingPlansFromApi,
   loadEmailSettings,
   loadOpenClawSettings,
   loadShipmentsFromApi,
@@ -58,6 +60,8 @@ import {
   type OpenClawConnectionTest,
   type PublicOpenClawConfig,
 } from "@/features/freightflow/api-client";
+import { BookingPlanPanel } from "@/features/freightflow/booking-plan-panel";
+import type { BookingPlanRecord } from "@/features/freightflow/booking-plan-rules";
 import {
   AiCopilotPanel,
   type AiRequestState,
@@ -99,6 +103,9 @@ export function FreightflowWorkbenchPage() {
   const [ccInput, setCcInput] = useState("");
   const [bookingSending, setBookingSending] = useState(false);
   const [contactState, setContactState] = useState<ContactRecord[]>(() => buildContacts(shipments[0]));
+  const [bookingPlans, setBookingPlans] = useState<BookingPlanRecord[]>([]);
+  const [selectedBookingPlanIds, setSelectedBookingPlanIds] = useState<Set<string>>(() => new Set());
+  const [bookingDraftGenerating, setBookingDraftGenerating] = useState(false);
   const [contactDraft, setContactDraft] = useState<ContactDraft>({
     email: "",
     label: "",
@@ -381,6 +388,22 @@ export function FreightflowWorkbenchPage() {
     }
   }, []);
 
+  const refreshBookingPlans = useCallback(async () => {
+    try {
+      const result = await loadBookingPlansFromApi();
+      setBookingPlans(result.data);
+      setSelectedBookingPlanIds((current) => {
+        const available = new Set(result.data.map((plan) => plan.shipmentId));
+        return new Set(Array.from(current).filter((id) => available.has(id)));
+      });
+    } catch (error) {
+      setToast({
+        tone: "info",
+        message: error instanceof Error ? error.message : "待发订舱计划加载失败",
+      });
+    }
+  }, []);
+
   useEffect(() => {
     if (!toast) return;
 
@@ -391,10 +414,11 @@ export function FreightflowWorkbenchPage() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void refreshWorkbenchData();
+      void refreshBookingPlans();
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [refreshWorkbenchData]);
+  }, [refreshBookingPlans, refreshWorkbenchData]);
 
   useEffect(() => {
     void Promise.allSettled([loadOpenClawSettings(), loadEmailSettings()]).then(([openClawResult, emailResult]) => {
@@ -567,6 +591,44 @@ export function FreightflowWorkbenchPage() {
     const nextShipment = visibleShipments.find((shipment) => shipment.id === shipmentId);
     setSelectedShipmentId(shipmentId);
     resetAiPanel(nextShipment);
+  }
+
+  function handleToggleBookingPlan(shipmentId: string) {
+    const plan = bookingPlans.find((item) => item.shipmentId === shipmentId);
+    if (plan?.planStatus !== "ready_to_draft") return;
+
+    setSelectedBookingPlanIds((current) => {
+      const next = new Set(current);
+      if (next.has(shipmentId)) {
+        next.delete(shipmentId);
+      } else {
+        next.add(shipmentId);
+      }
+      return next;
+    });
+  }
+
+  async function handleBatchGenerateBookingDrafts() {
+    const shipmentIds = Array.from(selectedBookingPlanIds);
+    if (shipmentIds.length === 0 || bookingDraftGenerating) return;
+
+    setBookingDraftGenerating(true);
+    try {
+      const result = await batchGenerateBookingDrafts(shipmentIds);
+      setToast({
+        tone: result.data.failedCount > 0 ? "info" : "success",
+        message: `草稿生成完成：成功 ${result.data.successCount}，跳过 ${result.data.skippedCount}，失败 ${result.data.failedCount}`,
+      });
+      setSelectedBookingPlanIds(new Set());
+      await refreshBookingPlans();
+    } catch (error) {
+      setToast({
+        tone: "info",
+        message: error instanceof Error ? error.message : "批量生成订舱草稿失败",
+      });
+    } finally {
+      setBookingDraftGenerating(false);
+    }
   }
 
   function handleResetQueueFilters() {
@@ -911,6 +973,14 @@ export function FreightflowWorkbenchPage() {
                       status: recommendedActionCard.status,
                       statusClassName: toneClass(progressTone(recommendedActionCard.status)),
                     }}
+                  />
+
+                  <BookingPlanPanel
+                    generating={bookingDraftGenerating}
+                    onGenerateDrafts={() => void handleBatchGenerateBookingDrafts()}
+                    onTogglePlan={handleToggleBookingPlan}
+                    plans={bookingPlans}
+                    selectedIds={selectedBookingPlanIds}
                   />
 
                 </div>
