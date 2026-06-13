@@ -714,3 +714,39 @@ type ShipmentRecord = {
   - `npx tsc --noEmit --incremental false` 通过
   - `npm test` 通过,4 个测试文件 / 29 个用例
   - `npm run build` 通过
+
+### 2026-06-14 · Track B / IMAP 真拉信 + 邮件同步状态机
+
+- 新增 `POST /api/email-sync/run` 拉信路由,接受 `{ mailbox?, limit?, fullSync? }` 请求体,返回 `SyncReport`。
+- 新增邮件拉信 provider 抽象 (`EmailPullProvider`):
+  - `src/lib/services/email/types.ts` 扩展:`EmailMessageMetadata / EmailMessageFull / EmailSearchOptions / EmailPullProvider / SyncReport / SyncReportError / RunSyncOptions`。
+  - `src/lib/services/email/imap-pull-provider.ts` 接入 `imapflow`,实现 `search()` 与 `fetchFull()`,可选注入 `factory` 便于测试。
+  - `src/lib/services/email/mock-pull-provider.ts` 提供 3 条 fixture(已出 SO / SI Confirmed / 柜型不符),用于本地无 IMAP 环境。
+  - `src/lib/services/email/email-service.ts` 新增 `runSync()` + `defaultTriggerRecognition()` + `createPullProvider()`。
+- 状态机:
+  1. `provider.search({ mailbox, limit, since })` 拿 metadata;
+  2. `provider.fetchFull(metadata)` 拉正文;
+  3. `prisma.emailMessage.findUnique({ where: { messageId } })` 去重;
+  4. `prisma.emailMessage.create({ ..., syncStatus: NEW })` 落库;
+  5. `defaultTriggerRecognition(id)` 把状态推进为 `PARSED`。
+- 增量模式默认:`since = max(receivedAt)` 当前 mailbox 最新一行;`fullSync=true` 时跳过 watermark。
+- Provider 选型:`IMAP_HOST + SMTP_USERNAME + SMTP_PASSWORD` 都配置时选 `ImapPullProvider`,否则回退到 `MockEmailPullProvider`。
+- 错误处理:
+  - 单条 fetch/persist/recognize 失败记入 `errors[]`,不中断整轮;
+  - 真实 IMAP 传输错误冒泡到路由,返回 5xx,绝不静默降级为 mock;
+  - 唯一约束冲突视作 duplicate,继续下一条;
+  - FAILED 状态走 `inMemoryFailures` 队列兜底(schema 暂无 errorMessage 列,留 TODO 标记)。
+- 同步报告字段:`provider / scanned / fetched / newInserted / duplicatesSkipped / errorCount / startedAt / finishedAt / errors[]`。
+- 新增 `src/lib/services/email/email-service.test.ts`,10 个用例覆盖:happy path、dedupe(查重 + 唯一约束)、search 失败、per-message fetch 失败、persist 失败、NEW→PARSED 状态推进、recognize 失败、provider 选型回退。
+- `.env.example` 增补 pull-sync 行为说明(IMAP 选型条件、watermark 语义、错误不静默)。
+- schema 微调:
+  - 增量新增 `EmailMessage` 模型与 `EmailMessageSyncStatus` 枚举(NEW / PARSED / FAILED);
+  - 该增量为 Track B 状态机编译/落库的最小必要条件,Track A 数据层与本改动互不重叠;
+  - schema 顶层结构、字段命名、enum map 全部沿用项目约定(`@map` 中文表名 / `@@map` 蛇形命名)。
+- 验证结果:
+  - `npx prisma validate` 通过
+  - `npx prisma generate` 通过
+  - `npx tsc --noEmit` 通过
+  - `npm test` 通过,5 个测试文件 / 39 个用例
+  - `npm run build` 通过
+  - `git ls-remote --heads origin feat/imap-pull-sync` 验证远端分支已落仓
