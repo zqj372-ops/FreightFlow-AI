@@ -1,36 +1,24 @@
 import {
-  AlarmClock,
-  BellRing,
-  Building2,
-  CalendarDays,
   CircleAlert,
   CircleX,
-  Clock,
   Clock3,
-  Container,
   Copy,
   FileSearch,
   FilePlus2,
   FileText,
   Filter,
-  Flag,
   LayoutDashboard,
   Mail,
-  MapPin,
-  Package,
   RefreshCw,
   ScanSearch,
   Search,
   Settings2,
   ShieldCheck,
-  Ship,
   ShipWheel,
   TriangleAlert,
   UserRound,
-  UserRoundCheck,
 } from "lucide-react";
-import type { ReactNode } from "react";
-import { buildBookingTrackingCard } from "@/features/freightflow/page-helpers";
+import { buildBookingTrackingCard, pickRecommendedAction } from "@/features/freightflow/page-helpers";
 import {
   getAlertLevel,
   mainNav,
@@ -159,20 +147,10 @@ function TrackingCopyButton({ label, value }: { label: string; value: string }) 
         event.stopPropagation();
         copyText(value);
       }}
-      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-blue-50 hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60"
+      className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60"
     >
-      <Copy className="h-3.5 w-3.5" />
+      <Copy className="h-2.5 w-2.5" />
     </button>
-  );
-}
-
-function TimelineChip({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
-  return (
-    <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-blue-100 bg-white/90 px-2 py-1 shadow-sm shadow-blue-100/40">
-      <span className="shrink-0 text-blue-600">{icon}</span>
-      <span className="text-[10px] font-extrabold text-blue-600">{label}</span>
-      <span className="truncate text-[10px] font-bold tabular-nums text-slate-900">{value}</span>
-    </span>
   );
 }
 
@@ -194,49 +172,22 @@ function TopTrackingField({
       rel="noreferrer"
       onClick={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
-      className="truncate text-[19px] font-extrabold leading-6 text-slate-950 underline-offset-2 hover:text-blue-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60"
+      className="truncate text-sm font-extrabold leading-5 text-slate-950 underline-offset-2 hover:text-blue-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60"
     >
       {value}
     </a>
   ) : (
-    <span className="truncate text-[19px] font-extrabold leading-6 text-slate-950">{value}</span>
+    <span className="truncate text-sm font-extrabold leading-5 text-slate-950">{value}</span>
   );
 
   return (
-    <div className="min-w-0 border-b border-blue-100 px-3 py-3 sm:border-b-0 sm:border-r sm:last:border-r-0">
-      <p className="text-xs font-extrabold text-blue-700">{label}</p>
-      <div className="mt-1.5 flex min-w-0 items-center gap-1.5">
+    <div className="min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm shadow-slate-100/60">
+      <p className="text-[10px] font-bold leading-3 text-slate-500">{label}</p>
+      <div className="mt-1 flex min-w-0 items-center gap-1">
         {valueContent}
         {copyLabel ? <TrackingCopyButton label={copyLabel} value={value} /> : null}
       </div>
     </div>
-  );
-}
-
-function PreviewInfoItem({
-  icon,
-  label,
-  value,
-  wide = false,
-}: {
-  icon: ReactNode;
-  label: string;
-  value: ReactNode;
-  wide?: boolean;
-}) {
-  return (
-    <article className={cx(
-      "flex min-w-0 items-center gap-2.5 rounded-lg border border-blue-100 bg-white px-3 py-3 shadow-sm shadow-blue-100/30",
-      wide ? "sm:col-span-2 xl:col-span-4" : "xl:col-span-2",
-    )}>
-      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-        {icon}
-      </span>
-      <div className="min-w-0">
-        <p className="text-[11px] font-extrabold leading-4 text-blue-700">{label}</p>
-        <div className="mt-1 truncate text-sm font-extrabold leading-5 text-slate-950">{value}</div>
-      </div>
-    </article>
   );
 }
 
@@ -753,6 +704,10 @@ export function QueuePanel({
               const level = getAlertLevel(shipment);
               const selected = selectedShipmentId === shipment.id;
               const trackingCard = buildBookingTrackingCard(shipment);
+              const recommendedAction = pickRecommendedAction(shipment);
+              const primaryException = shipment.exceptions[0];
+              const nextDeadline = trackingCard.cutoffPills.find((pill) => pill.value !== "-") ?? trackingCard.cutoffPills[0];
+              const documentSummary = `SO ${shipment.soStatus} / 补料 ${shipment.documentStatus}`;
 
               return (
                 <div
@@ -767,85 +722,74 @@ export function QueuePanel({
                     onSelectShipment(shipment.id);
                   }}
                   className={cx(
-                    "relative w-full cursor-pointer overflow-hidden rounded-[18px] border text-left shadow-[0_14px_36px_rgba(31,75,126,0.12)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60",
+                    "relative w-full cursor-pointer rounded-lg border bg-white text-left transition hover:border-slate-300 hover:bg-slate-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60",
                     selected
-                      ? "border-blue-500 bg-white"
-                      : "border-blue-100 bg-white hover:border-blue-200",
+                      ? "border-blue-500 shadow-sm shadow-blue-100"
+                      : "border-slate-200",
                   )}
                 >
-                  {selected ? <span className="absolute inset-y-4 left-0 z-10 w-1 rounded-r-full bg-blue-600" /> : null}
+                  {selected ? <span className="absolute inset-y-3 left-0 z-10 w-1 rounded-r-full bg-blue-600" /> : null}
 
-                  <div className="grid gap-3 border-b border-blue-100 bg-[linear-gradient(90deg,rgba(231,240,255,0.92),rgba(255,255,255,0.95)_54%)] px-3.5 py-3.5 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div className="hidden h-12 w-12 shrink-0 place-items-center rounded-xl border border-blue-100 bg-white text-blue-600 shadow-sm shadow-blue-100/70 sm:grid">
-                        <Ship className="h-6 w-6" />
+                  <div className="grid gap-3 px-4 py-3 xl:grid-cols-[minmax(0,1fr)_290px] xl:items-stretch">
+                    <div className="min-w-0 space-y-2">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <span className={cx("h-2 w-2 shrink-0 rounded-full", levelDot(level))} />
+                        <p className="truncate text-base font-bold leading-5 text-slate-950">{trackingCard.batchNo}</p>
+                        <TrackingCopyButton label="复制批次号" value={trackingCard.batchNo} />
+                        <span className={cx("inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold", levelBadge(level))}>
+                          {trackingCard.status}
+                        </span>
+                        <span className="inline-flex shrink-0 items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                          {shipment.operator}
+                        </span>
                       </div>
-                      <div className="min-w-0">
-                        <div className="flex min-w-0 flex-wrap items-center gap-2">
-                          <p className="truncate text-xl font-black leading-7 text-slate-950">{trackingCard.batchNo}</p>
-                          <TrackingCopyButton label="复制批次号" value={trackingCard.batchNo} />
-                          <span
-                            className={cx(
-                              "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-extrabold",
-                              levelBadge(level),
-                            )}
-                          >
-                            <span className={cx("h-2 w-2 rounded-full", levelDot(level))} />
-                            {trackingCard.status}
-                          </span>
+
+                      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold text-slate-600">
+                        <span className="truncate">{shipment.originPort} → {shipment.destinationPort}</span>
+                        <span className="hidden h-3 w-px bg-slate-200 sm:inline-block" />
+                        <span className="truncate">{trackingCard.vesselVoyage}</span>
+                        <span className="hidden h-3 w-px bg-slate-200 sm:inline-block" />
+                        <span>{trackingCard.containerType}</span>
+                        <span className="hidden h-3 w-px bg-slate-200 sm:inline-block" />
+                        <span>{shipment.carrier}</span>
+                      </div>
+
+                      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                        <TopTrackingField label="柜号" value={trackingCard.containerNo} copyLabel="复制柜号" queryUrl={trackingCard.queryUrl} />
+                        <TopTrackingField label="SO号" value={trackingCard.soNo} copyLabel="复制SO号" queryUrl={trackingCard.queryUrl} />
+                        <TopTrackingField label="订舱代理" value={trackingCard.bookingAgent} />
+                        <TopTrackingField label="单证状态" value={documentSummary} />
+                      </div>
+
+                      <div className="flex min-w-0 items-center gap-2 rounded-md bg-slate-50 px-2.5 py-2 ring-1 ring-slate-200/70">
+                        <FileText className="h-4 w-4 shrink-0 text-slate-500" />
+                        <span className="shrink-0 text-[11px] font-bold text-slate-500">下一步</span>
+                        <span className="truncate text-xs font-semibold text-slate-800">{primaryException ?? shipment.nextAction}</span>
+                      </div>
+                    </div>
+
+                    <aside className="flex min-w-0 flex-col justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-semibold text-slate-500">最近截止</span>
+                          <span className="truncate text-xs font-bold tabular-nums text-slate-950">{nextDeadline?.value ?? "-"}</span>
                         </div>
-                        <p className="mt-1 truncate text-[13px] font-semibold text-slate-500">{trackingCard.routeSummary}</p>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-semibold text-slate-500">ETD</span>
+                          <span className="truncate text-xs font-bold tabular-nums text-slate-950">{trackingCard.etd}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-semibold text-slate-500">件毛体</span>
+                          <span className="truncate text-xs font-bold text-slate-950">{trackingCard.packageWeightVolume}</span>
+                        </div>
                       </div>
-                    </div>
-
-                    <div className="flex min-w-0 flex-wrap items-center gap-1.5 xl:justify-end">
-                      <TimelineChip icon={<CalendarDays className="h-3.5 w-3.5" />} label="截单时间" value={trackingCard.cutoffPills[0]?.value ?? "-"} />
-                      <span className="hidden text-sm font-black text-blue-300 sm:inline">→</span>
-                      <TimelineChip icon={<AlarmClock className="h-3.5 w-3.5" />} label="截重时间" value={trackingCard.cutoffPills[1]?.value ?? "-"} />
-                      <span className="hidden text-sm font-black text-blue-300 sm:inline">→</span>
-                      <TimelineChip icon={<FileText className="h-3.5 w-3.5" />} label="截关时间" value={trackingCard.cutoffPills[2]?.value ?? "-"} />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 border-b border-blue-100 px-3.5 sm:grid-cols-2 xl:grid-cols-4">
-                    <TopTrackingField label="柜号" value={trackingCard.containerNo} copyLabel="复制柜号" queryUrl={trackingCard.queryUrl} />
-                    <TopTrackingField label="SO号" value={trackingCard.soNo} copyLabel="复制SO号" queryUrl={trackingCard.queryUrl} />
-                    <TopTrackingField label="订舱代理" value={trackingCard.bookingAgent} />
-                    <TopTrackingField label="海运费报价" value={trackingCard.oceanFreightPrice} />
-                  </div>
-
-                  <div className="m-3.5 rounded-2xl border border-blue-100 bg-gradient-to-b from-white to-slate-50/70 p-3.5 shadow-sm shadow-blue-100/40">
-                    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-12">
-                      <PreviewInfoItem icon={<Container className="h-5 w-5" />} label="柜型" value={trackingCard.containerType} />
-                      <PreviewInfoItem icon={<Ship className="h-5 w-5" />} label="船名 / 航次" value={trackingCard.vesselVoyage} wide />
-                      <PreviewInfoItem icon={<Package className="h-5 w-5" />} label="件数 / 毛重 / 体积" value={trackingCard.packageWeightVolume} wide />
-                      <PreviewInfoItem
-                        icon={<ShieldCheck className="h-5 w-5" />}
-                        label="提单电放确认"
-                        value={(
-                          <span className={cx("inline-flex min-h-7 max-w-full items-center truncate rounded-full border px-2.5 py-1 text-xs font-extrabold", trackingCard.blTelexStatus.className)}>
-                            {trackingCard.blTelexStatus.label}
-                          </span>
-                        )}
-                      />
-                      <PreviewInfoItem icon={<Flag className="h-5 w-5" />} label="当前状态" value={trackingCard.status} />
-                      <PreviewInfoItem icon={<Clock className="h-5 w-5" />} label="ETD" value={trackingCard.etd} wide />
-                      <PreviewInfoItem icon={<Clock className="h-5 w-5" />} label="ETA" value={trackingCard.eta} wide />
-                      <PreviewInfoItem icon={<MapPin className="h-5 w-5" />} label="拖车行" value={trackingCard.truckingCompany} wide />
-                      <PreviewInfoItem icon={<UserRound className="h-5 w-5" />} label="报关行" value={trackingCard.customsBroker} wide />
-                      <PreviewInfoItem icon={<Building2 className="h-5 w-5" />} label="发货人" value={trackingCard.shipper} wide />
-                      <PreviewInfoItem icon={<UserRoundCheck className="h-5 w-5" />} label="收货人" value={trackingCard.consignee} wide />
-                      <PreviewInfoItem icon={<BellRing className="h-5 w-5" />} label="通知方" value={trackingCard.notifyParty} wide />
-                    </div>
-
-                    {trackingCard.remark !== "-" ? (
-                      <div className="mt-3 flex min-w-0 items-center gap-3 rounded-lg border border-blue-100 bg-slate-50 px-3 py-3">
-                        <FileText className="h-5 w-5 shrink-0 text-blue-600" />
-                        <span className="shrink-0 text-xs font-extrabold text-blue-700">备注</span>
-                        <span className="h-4 w-px shrink-0 bg-blue-100" />
-                        <span className="truncate text-sm font-semibold text-slate-700">{trackingCard.remark}</span>
+                      <div className="flex items-center justify-between gap-2 border-t border-slate-200 pt-2">
+                        <span className="truncate text-[11px] font-semibold text-slate-500">{nextDeadline?.label ?? "截单时间"}</span>
+                        <span className="inline-flex shrink-0 items-center rounded-md bg-blue-600 px-2.5 py-1 text-xs font-bold text-white">
+                          {recommendedAction}
+                        </span>
                       </div>
-                    ) : null}
+                    </aside>
                   </div>
                 </div>
               );

@@ -2,9 +2,18 @@
 
 最后更新：2026-06-14
 当前分支：`codex/booking-plans-phase-1`
-最新提交：待本次提交更新
+最新提交：以 `git log -1 --oneline` 为准
 
 ## 0. 2026-06-14 本次交接更新
+
+### 2026-06-14 · Product Design · 货代自动化作业系统总说明入库
+
+- **远程仓库纠正**:正确 GitHub 远程是 `https://github.com/zqj372-ops/FreightFlow-AI.git`;`NEW-FR-AI.git` 属于用户另一个项目,不得继续推送本项目代码。
+- **产品说明入库**:用户提供的《货代自动订舱系统 · 设计文档》已作为 [product-design.md](./product-design.md) 纳入仓库。
+- **产品定位更新**:FreightFlow AI 统一描述为货代自动化作业系统的 AI 工作台与自动化机器人中枢,目标是把货代日常 70% 的“催、抄、录、查”交给系统完成。
+- **稳定文档同步**:README、[project-overview.md](./project-overview.md)、[business-rules.md](./business-rules.md)、[master-plan.md](./master-plan.md)、[todo.md](./todo.md) 已同步订舱、SO识别、补料、柜子跟踪、报关/清关、派送、财务识别和数据互通规划。
+- **队列卡片产品方向**:队列卡片应作为“异常优先的订舱操作行卡”,只回答这票是谁、去哪、卡在哪、什么时候危险、下一步做什么;完整字段继续放详情弹窗编辑。
+- **本地工具目录保护**:`.opencode/` 已加入 `.gitignore`,避免本地工具依赖被误提交。
 
 ### 2026-06-14 · Track B · IMAP 真拉信 + 邮件同步状态机
 
