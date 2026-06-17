@@ -48,6 +48,9 @@
 ### 2.1 真实邮件发送(P0)
 
 - 状态:已完成最小邮件发送抽象、本地 mock provider、SMTP provider 与 IMAP 连接验证。
+- 状态:已新增待发订舱计划第一版,支持按资料完整度筛选可生成草稿的 Shipment,并批量生成中文订舱草稿。
+- 状态:已新增订舱计划/草稿 API: `GET /api/booking-plans`, `POST /api/booking-plans/batch-drafts`, `GET/PATCH /api/email-drafts/[draftId]`, `POST /api/email-drafts/[draftId]/send`。
+- 状态:工作台已显示"待发订舱计划"面板;批量操作只生成草稿,不自动对外发送邮件。
 - 已新增 `src/lib/services/email/*`,包含 provider 接口、mock provider、SMTP provider、IMAP verifier、输入校验、`shipment_email_logs` / `shipment_email_recipients` 保存服务。
 - 已新增 `GET/POST /api/settings/email`,左侧“设置”可维护 IMAP/SMTP host、port、SSL/TLS、用户名、授权码、发件人和 Reply-To。
 - `POST /api/settings/email` 带 `test: true` 时会同时测试 SMTP 与 IMAP 连接。
@@ -55,17 +58,48 @@
 - 已新增 `POST /api/shipments/[shipmentId]/emails`,接收 `subject / body / attachmentName / to / cc / recipients`,先走 mock provider,再按 Prisma schema 保存 email log 与 recipients。
 - 仍需在真实邮箱服务商后台开启 IMAP/SMTP 服务并填写授权码。候选:腾讯企业邮箱 / 自建 SMTP / 第三方服务。
 - booking modal "发送"已接入 `/api/shipments/[id]/emails`,会优先调用邮件服务;数据库不可用或 shipment 未落库时回退本地演示状态,并继续后台尝试记录 `订舱邮件` action。
-- 剩余验收:填入真实邮箱 IMAP/SMTP 配置并保存测试通过;真实 PostgreSQL migration/seed 后,确认邮件 API 可保存 `shipment_email_logs` / `shipment_email_recipients`,并确认 UI 刷新后邮件状态与日志一致。
+- 剩余验收:填入真实邮箱 IMAP/SMTP 配置并保存测试通过;真实 PostgreSQL migration/seed 后,确认待发订舱计划、草稿、邮件 API 可持久化,并确认 UI 刷新后计划、草稿、邮件状态与日志一致。
 - 最终验收:订舱邮件真发出,`shipment_email_logs` 有记录,`shipment_email_recipients` 按 `TO / CC` 落库。
 
 ### 2.2 SO / 补料 / 申报文档流(P1)
 
 - 状态:已完成最小可替换文档流服务层与 API 占位。
+- 状态:已新增邮件识别队列第一版,支持中文/英文/中英混合邮件规则识别,包括 SO 回传、订舱回复、补料确认、催单回复、异常和未知。
+- 状态:已新增邮件消息/识别结果 Prisma 模型与 API: `POST /api/email-sync/run`, `GET /api/email-recognitions`。
+- 状态:已新增人工审核写回闭环:`POST /api/email-recognitions/[id]/review` 支持 `confirm / ignore / mark_exception`。
+- 状态:工作台邮件识别队列已提供“确认写入 / 标记异常 / 忽略”按钮;只有操作员确认后才写回 Shipment,忽略不会写回。
+- 状态:左侧 SO识别中心 / 补料中心 / AMS/ACI/ISF / 邮件中心 / 异常中心 已接入主模块面板,不再只是导航占位。
+- 重要边界:系统仍不会自动写回 Shipment 状态;所有 SO 回传、补料确认、异常邮件都必须人工点击后落库。
 - 已新增 `src/lib/services/documents/document-service.ts`,包含 SO 识别占位接口与补料模板生成占位接口。
 - 已新增 `POST /api/shipments/[shipmentId]/documents/so-recognition`,接收 `fileName / mimeType / sourceText`,返回占位识别结果、置信度和待替换 OCR 提醒。
-- 已新增 `POST /api/shipments/[shipmentId]/documents/supplement-template`,接收 `templateType / language / shipment`,返回 JSON 模板字段清单,为后续 Word / Excel 生成器预留数据结构。
-- 仍需接入真实附件上传、文件存储、SO 文件解析(OCR / parser)、补料模板生成(Word / Excel)、申报回执管理。
-- 最终验收:用户上传 SO 文件 → 自动识别柜号/船公司/ETD → 写入 shipment;用户可生成并下载真实补料模板文件。
+- 已新增托书与补料文件下载 API:`POST /api/shipments/[shipmentId]/documents/booking-template` 生成 DOCX 托书,`POST /api/shipments/[shipmentId]/documents/supplement-template` 生成 XLSX 补料表。
+- 仍需接入附件上传、文件存储、SO 文件解析(OCR / parser)、M3 字段抽取、申报回执管理和模板后台维护。
+- 最终验收:用户上传 SO 文件 → 自动识别柜号/船公司/ETD → 人工复核后写入 shipment;用户可生成并下载真实托书与补料模板文件。
+
+### 2.2.1 SO 识别链路优先级(P0)
+
+根据 [product-design.md](./product-design.md),下一阶段优先级调整为“SO 识别链路最长,M3 跑通后其它识别都能复用”:
+
+- [ ] IMAP 拉信结果接入邮件识别服务,不再只靠 mock 入队。
+- [ ] 邮件正文 / PDF 附件预处理,保留原文与附件引用。
+- [ ] MiniMax M3 抽取 SO schema:SO号、船公司、船名、航次、POL/POD、ETD、截单/截重/截关、柜型柜量。
+- [ ] 每个字段输出置信度,低置信度只标黄不阻断。
+- [ ] 复核界面支持原文/字段联动,操作员确认后写回 Shipment。
+- [ ] 确认写回后触发内部状态、财务预估和下游补料准备。
+
+### 2.2.2 订舱 / 催单机器人(P0)
+
+- [ ] 订舱邮件保持操作员预览后确认发送。
+- [ ] 2h 软催、4h 硬催、8h 弹窗电话提醒。
+- [ ] 代理回复分类:放舱、拒舱、改价/改时间、已读不回。
+- [ ] 一笔一封,催单文案按软/硬两套维护。
+
+### 2.2.3 补料触发闭环(P1)
+
+- [ ] 提柜完成后写入柜号 + 封号。
+- [ ] 收发通齐备后通过后端事件亮起补料表单。
+- [ ] 生成 SI Excel 附件,操作员预览确认后发送。
+- [ ] 代理回“确认”则推进状态;回“让改”则重新走完整补料流程。
 
 ### 2.3 AI 请求审计与历史(P1)
 
@@ -106,6 +140,13 @@
 - `detail-panels.tsx` 不再保留本地动作卡片实现。
 - 后续整理重点:继续将 `workbench-page.tsx` 中的状态编排拆成小 hook 或 reducer。
 
+### 3.5 主模块入口收口(P1)
+
+- 状态:已新增 `src/features/freightflow/module-panels.tsx`。
+- 状态:左侧 `SO识别中心 / 补料中心 / AMS/ACI/ISF / 邮件中心 / 异常中心` 均进入独立模块面板。
+- 状态:模块面板复用现有服务能力:邮件同步/识别审核、批量订舱草稿、补料文件下载、申报推进、异常明细编辑。
+- 剩余缺口:这些模块仍共享 `workbench-page.tsx` 的状态编排;后续应拆成 hooks/reducers 并补 E2E。
+
 ## 4. 测试与质量(P1/P2)
 
 源自 [handover §6.4](./handover.md#64-补充最基本测试)。
@@ -129,6 +170,7 @@
 
 - Playwright 跑订舱流程主链路。
 - 验收:打开首页 → 选中柜子 → 打开 booking modal → 填收件人 → 发送。
+- 新增验收建议:依次打开 SO识别中心 / 补料中心 / AMS/ACI/ISF / 邮件中心 / 异常中心,确认每个模块都有数据面板、主操作按钮和错误提示。
 
 ### 4.4 CI 质量门禁(P2)
 

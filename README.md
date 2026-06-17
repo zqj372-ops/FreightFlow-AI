@@ -1,14 +1,8 @@
 # FreightFlow AI
 
-FreightFlow AI 是一个面向加拿大、美国海运整柜与空运操作的 AI 工作台 MVP。当前版本先把 PRD 里的核心操作面板落到前端，包括：
+FreightFlow AI 是一套面向货代(Freight Forwarder)的自动化作业系统。产品目标是把货代日常 70% 的“催、抄、录、查”交给系统完成，并把订舱、SO 识别、补料、柜子跟踪、报关/清关、派送、财务识别整合成一个内部操作工作台与自动化机器人中枢。
 
-- 左侧物流操作菜单
-- 中间 Kanban 看板
-- 右侧 AI 助手与优先事项
-- Shipment 主模型样例数据
-- 自动催单 / 截补料提醒 / 异常中心摘要
-
-这版先做前端业务骨架，方便你确认信息架构和操作节奏；后续可继续接 NestJS、PostgreSQL、IMAP/SMTP、OCR 与模板生成。
+当前仓库是该系统的 Web MVP：先跑通“订舱工作台 + IMAP 邮件识别 + 操作员确认 + 订舱/补料文档生成”的核心链路，再逐步扩展到 OpenClaw + MiniMax M3 识别、外部 API 和桌面端。
 
 ## 本地运行
 
@@ -21,24 +15,30 @@ npm run dev
 
 ## 当前 MVP 覆盖
 
-- 订舱工作台首页
-- 柜子主视图和状态流转分栏
-- 红黄绿异常分级
-- 补料 / AMS / ACI / ISF 进度概览
-- AI 助手示例入口
+- 订舱工作台首页、左侧二级菜单和顶部快捷操作
+- 订舱队列、红黄绿异常分级、操作员筛选和搜索
+- 单击队列卡片查看/编辑订舱跟踪详情
+- 新建订舱计划弹窗、批量生成订舱草稿、操作员确认后发送
+- IMAP 邮件拉取服务骨架、mock 拉信兜底和邮件识别队列
+- 托书 Word 与补料 Excel 模板生成接口
+- PostgreSQL + Prisma 数据模型、Tokyo PostgreSQL SSH 隧道接入路径
+- OpenClaw 配置入口和 AI 副驾审计基础
 
 ## 目录说明
 
-- `src/app/page.tsx`: FreightFlow AI 操作台主页
-- `src/lib/mock-data.ts`: Shipment 样例数据、状态、提醒和统计逻辑
-- `src/app/globals.css`: 全局主题和基础样式
+- `docs/product-design.md`: 货代自动订舱系统完整产品设计说明
+- `docs/project-overview.md`: 项目定位、范围、运行方式和当前 MVP 边界
+- `src/features/freightflow/`: 订舱工作台、弹窗、详情面板、AI 副驾和业务 helper
+- `src/lib/services/email/`: SMTP 发送、IMAP 拉取、mock provider 和同步服务
+- `src/lib/services/documents/`: 托书 / 补料文档生成服务
+- `src/lib/repositories/`: Prisma / mock repository 抽象层
 
 ## 下一步建议
 
-1. 新建 NestJS API，先把 `shipments / emails / reminders / documents / users` 跑通。
-2. 接 PostgreSQL，把当前 `mock-data.ts` 替换成真实接口。
-3. 新增邮件中心服务，接腾讯企业邮箱 IMAP / SMTP。
-4. 接 SO 识别与 Word / Excel 补料模板生成。
+1. 优先跑通 SO 识别闭环：IMAP 拉信 → M3/OCR 抽取 → 复核队列 → 操作员确认写回。
+2. 完善订舱/催单机器人：2h 软催、4h 硬催、8h 弹窗电话提醒。
+3. 扩展补料流程：提柜 + 收发通齐备后自动亮起补料表单，生成 SI Excel 并发送。
+4. 补齐外部 API 文档：客户下单、报关行状态、国外代理清关、装载/派送回推。
 
 ## OpenClaw 接口占位
 

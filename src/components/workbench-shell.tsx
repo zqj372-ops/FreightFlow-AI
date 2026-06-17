@@ -2,7 +2,9 @@ import {
   CircleAlert,
   CircleX,
   Clock3,
+  Copy,
   FileSearch,
+  FilePlus2,
   FileText,
   Filter,
   LayoutDashboard,
@@ -16,6 +18,7 @@ import {
   TriangleAlert,
   UserRound,
 } from "lucide-react";
+import { buildBookingTrackingCard, pickRecommendedAction } from "@/features/freightflow/page-helpers";
 import {
   getAlertLevel,
   mainNav,
@@ -37,8 +40,11 @@ type SummaryData = {
 
 type SidebarNavProps = {
   activeNav: string;
+  activeSubNav?: string;
+  bookingSubNavItems?: string[];
   onOpenSettings?: () => void;
   onSelect: (item: string) => void;
+  onSelectSubNav?: (item: string) => void;
   summary: SummaryData;
 };
 
@@ -47,8 +53,12 @@ type HeaderProps = {
   onPrimaryAction: () => void;
   onRefresh: () => void;
   onSecondaryAction: (action: "催单提醒" | "补料文件") => void;
+  onTopCreateBookingPlan?: () => void;
   primaryActionLabel?: string;
   selectedShipment: ShipmentRecord;
+  topCreateBookingPlanDisabled?: boolean;
+  topCreateBookingPlanLabel?: string;
+  topCreateBookingPlanTitle?: string;
 };
 
 type MetricStripProps = {
@@ -120,11 +130,65 @@ function levelDot(level: AlertLevel) {
   return "bg-emerald-500";
 }
 
-function describeWaitWindow(shipment: ShipmentRecord) {
-  if (shipment.hoursToCutoff <= 6) return `截补料剩余 ${shipment.hoursToCutoff}h`;
-  if (shipment.hoursWaitingRelease >= 4) return `已等待放舱 ${shipment.hoursWaitingRelease}h`;
-  if (shipment.followUpCount > 0) return `已跟进 ${shipment.followUpCount} 次`;
-  return `ETD ${shipment.etd}`;
+function copyText(value: string) {
+  if (!value || value === "-") return;
+
+  if (navigator.clipboard?.writeText) {
+    void navigator.clipboard.writeText(value);
+  }
+}
+
+function TrackingCopyButton({ label, value }: { label: string; value: string }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={(event) => {
+        event.stopPropagation();
+        copyText(value);
+      }}
+      className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60"
+    >
+      <Copy className="h-2.5 w-2.5" />
+    </button>
+  );
+}
+
+function TopTrackingField({
+  copyLabel,
+  label,
+  queryUrl,
+  value,
+}: {
+  copyLabel?: string;
+  label: string;
+  queryUrl?: string;
+  value: string;
+}) {
+  const valueContent = queryUrl ? (
+    <a
+      href={queryUrl}
+      target="_blank"
+      rel="noreferrer"
+      onClick={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+      className="truncate text-sm font-extrabold leading-5 text-slate-950 underline-offset-2 hover:text-blue-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60"
+    >
+      {value}
+    </a>
+  ) : (
+    <span className="truncate text-sm font-extrabold leading-5 text-slate-950">{value}</span>
+  );
+
+  return (
+    <div className="min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm shadow-slate-100/60">
+      <p className="text-[10px] font-bold leading-3 text-slate-500">{label}</p>
+      <div className="mt-1 flex min-w-0 items-center gap-1">
+        {valueContent}
+        {copyLabel ? <TrackingCopyButton label={copyLabel} value={value} /> : null}
+      </div>
+    </div>
+  );
 }
 
 const navMeta: Record<
@@ -209,7 +273,15 @@ const metricCards = [
   },
 ] as const;
 
-export function SidebarNav({ activeNav, onOpenSettings, onSelect, summary }: SidebarNavProps) {
+export function SidebarNav({
+  activeNav,
+  activeSubNav,
+  bookingSubNavItems = [],
+  onOpenSettings,
+  onSelect,
+  onSelectSubNav,
+  summary,
+}: SidebarNavProps) {
   return (
     <aside className="border-b border-slate-200 bg-slate-950 text-slate-100 xl:min-h-dvh xl:border-b-0 xl:border-r">
       <div className="flex items-center justify-between gap-3 px-4 py-4 xl:flex-col xl:items-stretch xl:px-4 xl:py-5">
@@ -252,40 +324,65 @@ export function SidebarNav({ activeNav, onOpenSettings, onSelect, summary }: Sid
             const badge = item === "异常中心" ? `${summary.redAlerts}` : navSecondaryBadges[item];
 
             return (
-              <button
-                key={item}
-                type="button"
-                onClick={() => (item === "设置" ? onOpenSettings?.() ?? onSelect(item) : onSelect(item))}
-                className={cx(
-                  "flex min-h-11 items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70 xl:min-h-10 xl:justify-between xl:gap-2 xl:border-transparent",
-                  isActive
-                    ? "border-cyan-400/30 bg-cyan-500/15 text-white"
-                    : "border-slate-800 bg-slate-950 text-slate-300 hover:border-slate-700 hover:bg-slate-900 hover:text-white",
-                )}
-              >
-                <div className="flex min-w-0 items-center gap-3">
-                  <Icon className={cx("h-4 w-4 shrink-0", isActive ? "text-cyan-300" : "text-slate-500")} />
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{item}</p>
-                    <p className="mt-0.5 hidden truncate text-[11px] text-slate-500 xl:block">{meta.description}</p>
-                  </div>
-                </div>
-
-                {badge ? (
-                  <span
+              <div key={item} className="min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => (item === "设置" ? onOpenSettings?.() ?? onSelect(item) : onSelect(item))}
                     className={cx(
-                      "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium",
-                      item === "异常中心"
-                        ? isActive
-                          ? "bg-red-500/20 text-red-200"
-                          : "bg-red-500/15 text-red-300"
-                        : "bg-slate-800 text-slate-300",
+                      "flex min-h-11 w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70 xl:min-h-10 xl:justify-between xl:gap-2 xl:border-transparent",
+                      isActive
+                        ? "border-cyan-400/30 bg-cyan-500/15 text-white"
+                        : "border-slate-800 bg-slate-950 text-slate-300 hover:border-slate-700 hover:bg-slate-900 hover:text-white",
                     )}
                   >
-                    {badge}
-                  </span>
-                ) : null}
-              </button>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <Icon className={cx("h-4 w-4 shrink-0", isActive ? "text-cyan-300" : "text-slate-500")} />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{item}</p>
+                        <p className="mt-0.5 hidden truncate text-[11px] text-slate-500 xl:block">{meta.description}</p>
+                      </div>
+                    </div>
+
+                    {badge ? (
+                      <span
+                        className={cx(
+                          "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium",
+                          item === "异常中心"
+                            ? isActive
+                              ? "bg-red-500/20 text-red-200"
+                              : "bg-red-500/15 text-red-300"
+                            : "bg-slate-800 text-slate-300",
+                        )}
+                      >
+                        {badge}
+                      </span>
+                    ) : null}
+                  </button>
+
+                  {item === "订舱工作台" && isActive && bookingSubNavItems.length > 0 ? (
+                    <div className="mt-1.5 space-y-1 rounded-lg border border-slate-800 bg-slate-900/70 p-1.5">
+                      {bookingSubNavItems.map((subItem) => {
+                        const subActive = activeSubNav === subItem;
+
+                        return (
+                          <button
+                            key={subItem}
+                            type="button"
+                            onClick={() => onSelectSubNav?.(subItem)}
+                            className={cx(
+                              "flex min-h-9 w-full items-center rounded-md px-3 text-left text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70",
+                              subActive
+                                ? "bg-cyan-500/20 text-cyan-100"
+                                : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
+                            )}
+                          >
+                            {subItem}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+              </div>
             );
           })}
         </nav>
@@ -299,8 +396,12 @@ export function WorkbenchHeader({
   onPrimaryAction,
   onRefresh,
   onSecondaryAction,
+  onTopCreateBookingPlan,
   primaryActionLabel = "AI 总结",
   selectedShipment,
+  topCreateBookingPlanDisabled = false,
+  topCreateBookingPlanLabel = "新建订舱计划",
+  topCreateBookingPlanTitle,
 }: HeaderProps) {
   const navInfo = navMeta[activeNav] ?? navMeta["订舱工作台"];
 
@@ -330,6 +431,18 @@ export function WorkbenchHeader({
             </div>
 
             <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+              {onTopCreateBookingPlan ? (
+                <button
+                  type="button"
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-slate-950 px-3.5 text-sm font-medium text-white transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500/70 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
+                  onClick={onTopCreateBookingPlan}
+                  disabled={topCreateBookingPlanDisabled}
+                  title={topCreateBookingPlanTitle}
+                >
+                  <FilePlus2 className="h-4 w-4" />
+                  {topCreateBookingPlanLabel}
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60"
@@ -590,67 +703,95 @@ export function QueuePanel({
             {visibleShipments.map((shipment) => {
               const level = getAlertLevel(shipment);
               const selected = selectedShipmentId === shipment.id;
+              const trackingCard = buildBookingTrackingCard(shipment);
+              const recommendedAction = pickRecommendedAction(shipment);
+              const primaryException = shipment.exceptions[0];
+              const nextDeadline = trackingCard.cutoffPills.find((pill) => pill.value !== "-") ?? trackingCard.cutoffPills[0];
+              const documentSummary = `SO ${shipment.soStatus} / 补料 ${shipment.documentStatus}`;
 
               return (
-                <button
+                <div
                   key={shipment.id}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => onSelectShipment(shipment.id)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+
+                    event.preventDefault();
+                    onSelectShipment(shipment.id);
+                  }}
                   className={cx(
-                    "relative w-full rounded-lg border px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60 sm:px-3.5",
+                    "relative w-full cursor-pointer rounded-lg border bg-white text-left transition hover:border-slate-300 hover:bg-slate-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60",
                     selected
-                      ? "border-cyan-600 bg-cyan-50/80 shadow-sm shadow-cyan-100"
-                      : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50",
+                      ? "border-blue-500 shadow-sm shadow-blue-100"
+                      : "border-slate-200",
                   )}
                 >
-                  {selected ? <span className="absolute inset-y-3 left-0 w-1 rounded-r-full bg-cyan-600" /> : null}
+                  {selected ? <span className="absolute inset-y-3 left-0 z-10 w-1 rounded-r-full bg-blue-600" /> : null}
 
-                  <div className="flex items-start justify-between gap-3 pl-1">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                          {shipment.batchNo}
-                        </p>
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">
-                          {describeWaitWindow(shipment)}
+                  <div className="grid gap-3 px-4 py-3 xl:grid-cols-[minmax(0,1fr)_290px] xl:items-stretch">
+                    <div className="min-w-0 space-y-2">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <span className={cx("h-2 w-2 shrink-0 rounded-full", levelDot(level))} />
+                        <p className="truncate text-base font-bold leading-5 text-slate-950">{trackingCard.batchNo}</p>
+                        <TrackingCopyButton label="复制批次号" value={trackingCard.batchNo} />
+                        <span className={cx("inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold", levelBadge(level))}>
+                          {trackingCard.status}
+                        </span>
+                        <span className="inline-flex shrink-0 items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                          {shipment.operator}
                         </span>
                       </div>
-                      <p className="mt-1 truncate text-sm font-semibold text-slate-950">{shipment.containerNo}</p>
-                      <p className="mt-1 truncate text-xs text-slate-600">
-                        SO {shipment.soNo} · {shipment.carrier} · {shipment.destinationPort}
-                      </p>
+
+                      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold text-slate-600">
+                        <span className="truncate">{shipment.originPort} → {shipment.destinationPort}</span>
+                        <span className="hidden h-3 w-px bg-slate-200 sm:inline-block" />
+                        <span className="truncate">{trackingCard.vesselVoyage}</span>
+                        <span className="hidden h-3 w-px bg-slate-200 sm:inline-block" />
+                        <span>{trackingCard.containerType}</span>
+                        <span className="hidden h-3 w-px bg-slate-200 sm:inline-block" />
+                        <span>{shipment.carrier}</span>
+                      </div>
+
+                      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                        <TopTrackingField label="柜号" value={trackingCard.containerNo} copyLabel="复制柜号" queryUrl={trackingCard.queryUrl} />
+                        <TopTrackingField label="SO号" value={trackingCard.soNo} copyLabel="复制SO号" queryUrl={trackingCard.queryUrl} />
+                        <TopTrackingField label="订舱代理" value={trackingCard.bookingAgent} />
+                        <TopTrackingField label="单证状态" value={documentSummary} />
+                      </div>
+
+                      <div className="flex min-w-0 items-center gap-2 rounded-md bg-slate-50 px-2.5 py-2 ring-1 ring-slate-200/70">
+                        <FileText className="h-4 w-4 shrink-0 text-slate-500" />
+                        <span className="shrink-0 text-[11px] font-bold text-slate-500">下一步</span>
+                        <span className="truncate text-xs font-semibold text-slate-800">{primaryException ?? shipment.nextAction}</span>
+                      </div>
                     </div>
 
-                    <span
-                      className={cx(
-                        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-[11px] font-medium",
-                        levelBadge(level),
-                      )}
-                    >
-                      <span className={cx("h-1.5 w-1.5 rounded-full", levelDot(level))} />
-                      {shipment.status}
-                    </span>
+                    <aside className="flex min-w-0 flex-col justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-semibold text-slate-500">最近截止</span>
+                          <span className="truncate text-xs font-bold tabular-nums text-slate-950">{nextDeadline?.value ?? "-"}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-semibold text-slate-500">ETD</span>
+                          <span className="truncate text-xs font-bold tabular-nums text-slate-950">{trackingCard.etd}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-semibold text-slate-500">件毛体</span>
+                          <span className="truncate text-xs font-bold text-slate-950">{trackingCard.packageWeightVolume}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between gap-2 border-t border-slate-200 pt-2">
+                        <span className="truncate text-[11px] font-semibold text-slate-500">{nextDeadline?.label ?? "截单时间"}</span>
+                        <span className="inline-flex shrink-0 items-center rounded-md bg-blue-600 px-2.5 py-1 text-xs font-bold text-white">
+                          {recommendedAction}
+                        </span>
+                      </div>
+                    </aside>
                   </div>
-
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-slate-600 lg:grid-cols-4">
-                    <div className="rounded-md bg-slate-50 px-2.5 py-2">
-                      <p className="text-slate-400">ETD</p>
-                      <p className="mt-1 truncate font-medium tabular-nums text-slate-700">{shipment.etd}</p>
-                    </div>
-                    <div className="rounded-md bg-slate-50 px-2.5 py-2">
-                      <p className="text-slate-400">截补料</p>
-                      <p className="mt-1 truncate font-medium tabular-nums text-slate-700">{shipment.cutoffTime}</p>
-                    </div>
-                    <div className="rounded-md bg-slate-50 px-2.5 py-2">
-                      <p className="text-slate-400">负责人</p>
-                      <p className="mt-1 truncate font-medium text-slate-700">{shipment.operator}</p>
-                    </div>
-                    <div className="rounded-md bg-slate-50 px-2.5 py-2">
-                      <p className="text-slate-400">跟进</p>
-                      <p className="mt-1 font-medium tabular-nums text-slate-700">{shipment.followUpCount} 次</p>
-                    </div>
-                  </div>
-                </button>
+                </div>
               );
             })}
           </div>

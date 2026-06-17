@@ -36,6 +36,8 @@ yarn-error.log*
 
 # local app runtime settings
 .freightflow/
+.superpowers/
+.opencode/
 
 # vercel
 .vercel

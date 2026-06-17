@@ -3,14 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Bell,
-  Clock3,
   FileText,
   Mail,
-  MapPinned,
   RefreshCw,
   ShipWheel,
   TriangleAlert,
-  UserRound,
 } from "lucide-react";
 import {
   MetricStrip,
@@ -29,7 +26,15 @@ import {
 } from "@/lib/mock-data";
 import {
   buildBookingDraft,
+  buildBookingFormDraft,
+  buildBookingPlanAttachmentPreview,
   buildContacts,
+  buildPostBookingSendState,
+  buildShipmentStatusEditDraft,
+  applyShipmentStatusEditDraft,
+  buildShipmentBrief,
+  buildShipmentDetailGroups,
+  canCreateBookingPlanFromShipment,
   cutoffTone,
   isValidEmail,
   normalizeEmail,
@@ -38,6 +43,8 @@ import {
   quickPrompts,
   toneClass,
   type BookingDraft,
+  type BookingFormDraft,
+  type ShipmentStatusEditDraft,
   type ContactDraft,
   type ContactRecord,
   type DetailActionLabel,
@@ -45,19 +52,34 @@ import {
 } from "@/features/freightflow/page-helpers";
 import {
   loadContactsFromApi,
+  batchGenerateBookingDrafts,
+  loadBookingPlansFromApi,
+  downloadShipmentDocumentFromApi,
+  loadEmailDraftFromApi,
+  loadEmailRecognitionsFromApi,
   loadEmailSettings,
   loadOpenClawSettings,
   loadShipmentsFromApi,
   persistContact,
   persistShipmentAction,
+  reviewEmailRecognitionFromApi,
   saveEmailSettings,
   saveOpenClawSettings,
+  sendEmailDraftFromApi,
   sendBookingEmail,
+  runEmailSyncFromApi,
+  updateEmailDraftFromApi,
+  type EmailRecognitionReviewAction,
+  type EmailRecognitionQueueItem,
   type EmailConnectionTest,
   type PublicEmailConfig,
   type OpenClawConnectionTest,
   type PublicOpenClawConfig,
 } from "@/features/freightflow/api-client";
+import { BookingPlanWorkflow } from "@/features/freightflow/booking-plan-workflow";
+import type { BookingPlanRecord } from "@/features/freightflow/booking-plan-rules";
+import { EmailRecognitionPanel } from "@/features/freightflow/email-recognition-panel";
+import { FreightflowModulePanel } from "@/features/freightflow/module-panels";
 import {
   AiCopilotPanel,
   type AiRequestState,
@@ -73,12 +95,18 @@ import { type DetailItem } from "@/features/freightflow/shared-ui";
 import {
   ShipmentActionPanel,
   ShipmentDetailPanel,
+  ShipmentDetailDrawer,
   ShipmentFieldPanel,
+  ShipmentStatusEditDrawer,
 } from "@/features/freightflow/detail-panels";
+
+const bookingSubNavItems = ["柜子队列", "新建订舱计划", "柜子状态明细", "操作面板", "邮件识别队列", "AI 副驾"] as const;
+type BookingSubNavItem = (typeof bookingSubNavItems)[number];
 
 export function FreightflowWorkbenchPage() {
   const [shipmentState, setShipmentState] = useState<ShipmentRecord[]>(shipments);
   const [activeNav, setActiveNav] = useState(mainNav[0] ?? "订舱工作台");
+  const [activeBookingSubNav, setActiveBookingSubNav] = useState<BookingSubNavItem>("柜子队列");
   const [activeColumn, setActiveColumn] = useState(statusColumns[0]?.key ?? "waiting-release");
   const [alertFilter, setAlertFilter] = useState<AlertLevel | "all">("all");
   const [ownerFilter, setOwnerFilter] = useState("all");
@@ -99,6 +127,20 @@ export function FreightflowWorkbenchPage() {
   const [ccInput, setCcInput] = useState("");
   const [bookingSending, setBookingSending] = useState(false);
   const [contactState, setContactState] = useState<ContactRecord[]>(() => buildContacts(shipments[0]));
+  const [bookingPlans, setBookingPlans] = useState<BookingPlanRecord[]>([]);
+  const [selectedBookingPlanIds, setSelectedBookingPlanIds] = useState<Set<string>>(() => new Set());
+  const [emailRecognitions, setEmailRecognitions] = useState<EmailRecognitionQueueItem[]>([]);
+  const [bookingDraftGenerating, setBookingDraftGenerating] = useState(false);
+  const [bookingWorkflowOpen, setBookingWorkflowOpen] = useState(false);
+  const [bookingWorkflowDraftId, setBookingWorkflowDraftId] = useState<string | null>(null);
+  const [bookingWorkflowStatus, setBookingWorkflowStatus] = useState<string | null>(null);
+  const [bookingWorkflowSending, setBookingWorkflowSending] = useState(false);
+  const [bookingWorkflowForm, setBookingWorkflowForm] = useState<BookingFormDraft>(() => buildBookingFormDraft(shipments[0]));
+  const [detailDrawerOpen, setDetailDrawerOpen] = useState(false);
+  const [statusEditDrawerOpen, setStatusEditDrawerOpen] = useState(false);
+  const [statusEditDraft, setStatusEditDraft] = useState<ShipmentStatusEditDraft>(() => buildShipmentStatusEditDraft(shipments[0]));
+  const [emailSyncing, setEmailSyncing] = useState(false);
+  const [reviewingEmailRecognitionId, setReviewingEmailRecognitionId] = useState<string | null>(null);
   const [contactDraft, setContactDraft] = useState<ContactDraft>({
     email: "",
     label: "",
@@ -209,6 +251,10 @@ export function FreightflowWorkbenchPage() {
   }, [bookingShipmentId, shipmentState]);
 
   const selectedShipmentLevel = getAlertLevel(selectedShipment);
+  const shipmentBrief = buildShipmentBrief(selectedShipment);
+  const shipmentDetailGroups = buildShipmentDetailGroups(selectedShipment);
+  const bookingPlanCreateCheck = canCreateBookingPlanFromShipment(selectedShipment);
+  const bookingWorkflowAttachment = buildBookingPlanAttachmentPreview(selectedShipment, bookingWorkflowForm);
   const fieldItems = [
     { label: "订舱代理", value: selectedShipment.bookingAgent },
     { label: "操作员", value: selectedShipment.operator },
@@ -220,33 +266,6 @@ export function FreightflowWorkbenchPage() {
     { className: toneClass(progressTone(selectedShipment.documentProgress.aci)), label: "ACI", value: selectedShipment.documentProgress.aci },
     { className: toneClass(progressTone(selectedShipment.documentProgress.isf)), label: "ISF", value: selectedShipment.documentProgress.isf },
   ] satisfies ReadonlyArray<{ className: string; label: string; value: string }>;
-
-  const shipmentHeaderItems = [
-    {
-      icon: ShipWheel,
-      label: "航线",
-      value: `${selectedShipment.originPort} → ${selectedShipment.destinationPort}`,
-    },
-    {
-      icon: Clock3,
-      label: "ETD / ETA",
-      value: `${selectedShipment.etd} / ${selectedShipment.eta}`,
-    },
-    {
-      icon: MapPinned,
-      label: "柜型 / 中转",
-      value: `${selectedShipment.containerType} · ${selectedShipment.transitPort || "直达"}`,
-    },
-    {
-      icon: UserRound,
-      label: "责任人",
-      value: `${selectedShipment.operator} · ${selectedShipment.bookingAgent}`,
-    },
-  ] satisfies ReadonlyArray<{
-    icon: React.ComponentType<{ className?: string }>;
-    label: string;
-    value: string;
-  }>;
 
   const recommendedAction = pickRecommendedAction(selectedShipment);
   const reminderItems = [...selectedShipment.reminderFlags, ...selectedShipment.exceptions];
@@ -381,6 +400,30 @@ export function FreightflowWorkbenchPage() {
     }
   }, []);
 
+  const refreshBookingPlans = useCallback(async () => {
+    try {
+      const result = await loadBookingPlansFromApi();
+      setBookingPlans(result.data);
+    } catch (error) {
+      setToast({
+        tone: "info",
+        message: error instanceof Error ? error.message : "待发订舱计划加载失败",
+      });
+    }
+  }, []);
+
+  const refreshEmailRecognitions = useCallback(async () => {
+    try {
+      const result = await loadEmailRecognitionsFromApi();
+      setEmailRecognitions(result.data);
+    } catch (error) {
+      setToast({
+        tone: "info",
+        message: error instanceof Error ? error.message : "邮件识别队列加载失败",
+      });
+    }
+  }, []);
+
   useEffect(() => {
     if (!toast) return;
 
@@ -391,10 +434,12 @@ export function FreightflowWorkbenchPage() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void refreshWorkbenchData();
+      void refreshBookingPlans();
+      void refreshEmailRecognitions();
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [refreshWorkbenchData]);
+  }, [refreshBookingPlans, refreshEmailRecognitions, refreshWorkbenchData]);
 
   useEffect(() => {
     void Promise.allSettled([loadOpenClawSettings(), loadEmailSettings()]).then(([openClawResult, emailResult]) => {
@@ -448,6 +493,22 @@ export function FreightflowWorkbenchPage() {
     return () => window.removeEventListener("keydown", handleEscape);
   }, [bookingShipmentId, bookingSending]);
 
+  useEffect(() => {
+    if (!bookingWorkflowOpen) return;
+
+    const plan = bookingPlans.find((item) => item.shipmentId === selectedShipment.id);
+    if (!plan?.lastDraftId || plan.lastDraftId === bookingWorkflowDraftId) return;
+
+    void loadEmailDraftFromApi(plan.lastDraftId)
+      .then((result) => {
+        setBookingWorkflowDraftId(result.data.id);
+        setBookingDraft(result.data);
+      })
+      .catch((error) => {
+        setBookingWorkflowStatus(error instanceof Error ? error.message : "邮件草稿加载失败");
+      });
+  }, [bookingPlans, bookingWorkflowDraftId, bookingWorkflowOpen, selectedShipment.id]);
+
   function updateShipment(mutator: (shipment: ShipmentRecord) => ShipmentRecord, successMessage: string) {
     if (!selectedShipment) return;
 
@@ -478,11 +539,22 @@ export function FreightflowWorkbenchPage() {
     );
   }
 
+  function resetBookingWorkflow(nextShipment: ShipmentRecord | undefined) {
+    if (!nextShipment) return;
+
+    setBookingWorkflowForm(buildBookingFormDraft(nextShipment));
+    setBookingWorkflowDraftId(null);
+    setBookingWorkflowStatus(null);
+    setBookingDraft(buildBookingDraft(nextShipment));
+    setStatusEditDraft(buildShipmentStatusEditDraft(nextShipment));
+  }
+
   function handleColumnChange(columnKey: string) {
     const nextRecords = recordsForColumn.get(columnKey) ?? [];
     setActiveColumn(columnKey);
     setSelectedShipmentId(nextRecords[0]?.id ?? "");
     resetAiPanel(nextRecords[0]);
+    resetBookingWorkflow(nextRecords[0]);
   }
 
   function handleNavSelect(item: string) {
@@ -492,9 +564,61 @@ export function FreightflowWorkbenchPage() {
     }
 
     setActiveNav(item);
+    if (item === "订舱工作台") {
+      setActiveBookingSubNav("柜子队列");
+    }
   }
 
-  function openOpenClawSettings() {
+  function openBookingPlanWorkflow() {
+    setActiveNav("订舱工作台");
+    setActiveBookingSubNav("柜子队列");
+    setBookingWorkflowOpen(true);
+    setBookingWorkflowStatus(null);
+  }
+
+  function handleBookingSubNavSelect(item: BookingSubNavItem) {
+    setActiveNav("订舱工作台");
+
+    if (item === "新建订舱计划") {
+      openBookingPlanWorkflow();
+      return;
+    }
+
+    if (item === "柜子状态明细") {
+      setActiveBookingSubNav(item);
+      setDetailDrawerOpen(true);
+      return;
+    }
+
+    setActiveBookingSubNav(item);
+  }
+
+  function openShipmentStatusEditor(shipmentId = selectedShipment.id) {
+    const shipment = shipmentState.find((item) => item.id === shipmentId) ?? selectedShipment;
+    setSelectedShipmentId(shipment.id);
+    setStatusEditDraft(buildShipmentStatusEditDraft(shipment));
+    setDetailDrawerOpen(false);
+    setStatusEditDrawerOpen(true);
+    setActiveNav("订舱工作台");
+    resetAiPanel(shipment);
+    resetBookingWorkflow(shipment);
+  }
+
+  function handleSaveShipmentStatusEdit() {
+    setShipmentState((current) =>
+      current.map((shipment) =>
+        shipment.id === selectedShipment.id ? applyShipmentStatusEditDraft(shipment, statusEditDraft) : shipment,
+      ),
+    );
+    setStatusEditDrawerOpen(false);
+    setToast({ tone: "success", message: "柜子状态明细已人工修正" });
+    persistActionInBackground("异常标记", selectedShipment.id);
+  }
+
+  function openOpenClawSettings(tab?: SettingsTab) {
+    if (tab) {
+      setSettingsTab(tab);
+    }
     setOpenClawSettingsOpen(true);
     setOpenClawSettingsError(null);
     setOpenClawTestResult(null);
@@ -563,10 +687,199 @@ export function FreightflowWorkbenchPage() {
     }
   }
 
-  function handleSelectShipment(shipmentId: string) {
-    const nextShipment = visibleShipments.find((shipment) => shipment.id === shipmentId);
-    setSelectedShipmentId(shipmentId);
-    resetAiPanel(nextShipment);
+  async function handleGenerateWorkflowDraft() {
+    if (bookingDraftGenerating) return;
+
+    const createCheck = canCreateBookingPlanFromShipment(selectedShipment);
+    if (!createCheck.canCreate) {
+      setBookingWorkflowStatus(createCheck.message);
+      setToast({ tone: "info", message: createCheck.message });
+      return;
+    }
+
+    setBookingDraftGenerating(true);
+    try {
+      const result = await batchGenerateBookingDrafts([selectedShipment.id]);
+      const item = result.data.items[0];
+      if (!item?.draft || item.status !== "success") {
+        const message = item?.message ?? "未生成订舱草稿";
+        setBookingWorkflowStatus(message);
+        setToast({ tone: "info", message });
+        return;
+      }
+
+      const nextDraft = {
+        attachmentName: bookingWorkflowAttachment.fileName,
+        body: item.draft.body,
+        cc: item.draft.cc,
+        subject: item.draft.subject,
+        to: item.draft.to,
+      } satisfies BookingDraft;
+
+      const draftId = item.plan.lastDraftId;
+      if (draftId) {
+        const updated = await updateEmailDraftFromApi(draftId, nextDraft);
+        setBookingWorkflowDraftId(updated.data.id);
+        setBookingDraft(updated.data);
+        setBookingWorkflowStatus("附件已生成，邮件草稿已更新，等待人工确认发送。");
+      } else {
+        setBookingWorkflowDraftId(null);
+        setBookingDraft(nextDraft);
+        setBookingWorkflowStatus("附件和草稿已在本地生成；当前为 mock 数据，需连接数据库后才能确认发送。");
+      }
+
+      await refreshBookingPlans();
+      setToast({ tone: "success", message: `已为 ${selectedShipment.batchNo} 更新订舱草稿` });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "生成订舱草稿失败";
+      setBookingWorkflowStatus(message);
+      setToast({ tone: "info", message });
+    } finally {
+      setBookingDraftGenerating(false);
+    }
+  }
+
+  async function handleGenerateSelectedBookingDrafts() {
+    if (selectedBookingPlanIds.size === 0 || bookingDraftGenerating) return;
+
+    setBookingDraftGenerating(true);
+    try {
+      const result = await batchGenerateBookingDrafts([...selectedBookingPlanIds]);
+      const successCount = result.data.items.filter((item) => item.status === "success").length;
+      const failedCount = result.data.items.length - successCount;
+
+      setSelectedBookingPlanIds(new Set());
+      await refreshBookingPlans();
+      setToast({
+        tone: successCount > 0 ? "success" : "info",
+        message:
+          failedCount > 0
+            ? `已生成 ${successCount} 票草稿，${failedCount} 票需补资料`
+            : `已生成 ${successCount} 票订舱草稿`,
+      });
+    } catch (error) {
+      setToast({
+        tone: "info",
+        message: error instanceof Error ? error.message : "批量生成订舱草稿失败",
+      });
+    } finally {
+      setBookingDraftGenerating(false);
+    }
+  }
+
+  function handleToggleBookingPlan(shipmentId: string) {
+    setSelectedBookingPlanIds((current) => {
+      const next = new Set(current);
+      if (next.has(shipmentId)) {
+        next.delete(shipmentId);
+      } else {
+        next.add(shipmentId);
+      }
+
+      return next;
+    });
+  }
+
+  async function handleSendWorkflowDraft() {
+    if (!bookingWorkflowDraftId || bookingWorkflowSending) {
+      setBookingWorkflowStatus("当前草稿尚未持久化，不能执行确认发送。请先生成并更新草稿。");
+      return;
+    }
+
+    setBookingWorkflowSending(true);
+    try {
+      await sendEmailDraftFromApi(bookingWorkflowDraftId);
+      const sentAt = new Date().toLocaleString("zh-CN", { hour12: false });
+      setShipmentState((current) =>
+        current.map((shipment) =>
+          shipment.id === selectedShipment.id ? buildPostBookingSendState(shipment, sentAt) : shipment,
+        ),
+      );
+      setBookingWorkflowOpen(false);
+      setActiveBookingSubNav("邮件识别队列");
+      setBookingWorkflowStatus("订舱邮件已发送，当前柜已进入等待代理回传 SO。由 IMAP 识别回信后人工确认写回。");
+      setToast({ tone: "success", message: "订舱邮件已发送，等待代理回传 SO" });
+      await Promise.all([refreshBookingPlans(), refreshWorkbenchData()]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "确认发送订舱邮件失败";
+      setBookingWorkflowStatus(message);
+      setToast({ tone: "info", message });
+    } finally {
+      setBookingWorkflowSending(false);
+    }
+  }
+
+  async function handleDownloadBookingInstruction() {
+    try {
+      const result = await downloadShipmentDocumentFromApi({
+        kind: "booking-template",
+        shipment: {
+          ...selectedShipment,
+          bookingAgent: bookingWorkflowForm.bookingAgent,
+          carrier: bookingWorkflowForm.carrier,
+          containerType: bookingWorkflowForm.containerType,
+          destinationPort: bookingWorkflowForm.destinationPort,
+          etd: bookingWorkflowForm.etd,
+          originPort: bookingWorkflowForm.originPort,
+          pickupLocation: bookingWorkflowForm.pickupLocation,
+          returnLocation: bookingWorkflowForm.returnLocation,
+          vesselVoyage: bookingWorkflowForm.vesselVoyage,
+        },
+      });
+      setToast({ tone: "success", message: `托书已生成：${result.fileName}` });
+    } catch (error) {
+      setToast({
+        tone: "info",
+        message: error instanceof Error ? error.message : "托书生成失败",
+      });
+    }
+  }
+
+  async function handleDownloadSupplementTemplate(shipment = selectedShipment) {
+    const result = await downloadShipmentDocumentFromApi({
+      kind: "supplement-template",
+      shipment,
+    });
+    setToast({ tone: "success", message: `补料表已生成：${result.fileName}` });
+  }
+
+  async function handleRunEmailSync() {
+    if (emailSyncing) return;
+
+    setEmailSyncing(true);
+    try {
+      const result = await runEmailSyncFromApi();
+      setToast({
+        tone: "success",
+        message: `邮箱同步完成：新增 ${result.data.importedCount}，重复 ${result.data.duplicateCount}`,
+      });
+      await refreshEmailRecognitions();
+    } catch (error) {
+      setToast({
+        tone: "info",
+        message: error instanceof Error ? error.message : "邮箱同步失败",
+      });
+    } finally {
+      setEmailSyncing(false);
+    }
+  }
+
+  async function handleReviewEmailRecognition(id: string, action: EmailRecognitionReviewAction) {
+    if (reviewingEmailRecognitionId) return;
+
+    setReviewingEmailRecognitionId(id);
+    try {
+      const result = await reviewEmailRecognitionFromApi({ action, id, reviewer: "操作员" });
+      setToast({ tone: "success", message: result.data.summary });
+      await Promise.all([refreshEmailRecognitions(), refreshWorkbenchData()]);
+    } catch (error) {
+      setToast({
+        tone: "info",
+        message: error instanceof Error ? error.message : "邮件识别审核失败",
+      });
+    } finally {
+      setReviewingEmailRecognitionId(null);
+    }
   }
 
   function handleResetQueueFilters() {
@@ -716,15 +1029,25 @@ export function FreightflowWorkbenchPage() {
         persistActionInBackground("催单提醒");
         break;
       case "补料文件":
-        updateShipment(
-          (shipment) => ({
-            ...shipment,
-            documentStatus: "已发送",
-            status: shipment.status === "待补料" ? "已发送补料" : shipment.status,
-          }),
-          "补料文件状态已推进",
-        );
-        persistActionInBackground("补料文件");
+        void (async () => {
+          try {
+            await handleDownloadSupplementTemplate(selectedShipment);
+            updateShipment(
+              (shipment) => ({
+                ...shipment,
+                documentStatus: "已发送",
+                status: shipment.status === "待补料" ? "已发送补料" : shipment.status,
+              }),
+              "补料文件已生成，状态已推进",
+            );
+            persistActionInBackground("补料文件");
+          } catch (error) {
+            setToast({
+              tone: "info",
+              message: error instanceof Error ? error.message : "补料表生成失败",
+            });
+          }
+        })();
         break;
       case "SO 识别":
         updateShipment(
@@ -840,8 +1163,11 @@ export function FreightflowWorkbenchPage() {
       <div className="mx-auto grid min-h-dvh w-full max-w-[1760px] grid-cols-1 xl:grid-cols-[208px_minmax(0,1fr)]">
         <SidebarNav
           activeNav={activeNav}
+          activeSubNav={activeBookingSubNav}
+          bookingSubNavItems={[...bookingSubNavItems]}
           onOpenSettings={openOpenClawSettings}
           onSelect={handleNavSelect}
+          onSelectSubNav={(item) => handleBookingSubNavSelect(item as BookingSubNavItem)}
           summary={summary}
         />
 
@@ -852,91 +1178,192 @@ export function FreightflowWorkbenchPage() {
             primaryActionLabel="AI 总结"
             onRefresh={() => void refreshWorkbenchData(true)}
             onSecondaryAction={(action) => handleAction(action)}
+            onTopCreateBookingPlan={openBookingPlanWorkflow}
             selectedShipment={selectedShipment}
+            topCreateBookingPlanDisabled={false}
+            topCreateBookingPlanTitle={bookingPlanCreateCheck.message}
           />
 
-          <div className="mt-3">
-            <MetricStrip activeColumn={activeColumn} onSelectColumn={handleColumnChange} summary={summary} />
-          </div>
+          {activeNav !== "订舱工作台" ? (
+            <FreightflowModulePanel
+              activeNav={activeNav}
+              bookingDraftGenerating={bookingDraftGenerating}
+              bookingPlans={bookingPlans}
+              emailRecognitions={emailRecognitions}
+              emailSyncing={emailSyncing}
+              onDownloadSupplementTemplate={(shipment) => void handleDownloadSupplementTemplate(shipment)}
+              onGenerateBookingDrafts={() => void handleGenerateSelectedBookingDrafts()}
+              onOpenBookingPlanWorkflow={openBookingPlanWorkflow}
+              onOpenSettings={openOpenClawSettings}
+              onOpenStatusEditor={openShipmentStatusEditor}
+              onReviewEmailRecognition={(id, action) => void handleReviewEmailRecognition(id, action)}
+              onRunAction={handleAction}
+              onRunEmailSync={() => void handleRunEmailSync()}
+              onToggleBookingPlan={handleToggleBookingPlan}
+              reviewingEmailRecognitionId={reviewingEmailRecognitionId}
+              selectedBookingPlanIds={selectedBookingPlanIds}
+              selectedShipment={selectedShipment}
+              shipments={shipmentState}
+            />
+          ) : activeBookingSubNav === "柜子队列" ? (
+            <>
+              <div className="mt-3">
+                <MetricStrip activeColumn={activeColumn} onSelectColumn={handleColumnChange} summary={summary} />
+              </div>
 
-          <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-3 min-[1800px]:grid-cols-[minmax(1040px,1fr)_400px]">
-            <section className="grid min-h-0 min-w-0 grid-cols-1 gap-3 xl:grid-cols-[360px_minmax(0,1fr)] 2xl:grid-cols-[380px_minmax(0,1fr)]">
-              <QueuePanel
-                activeColumn={activeColumn}
-                alertFilter={alertFilter}
-                onAlertFilterChange={setAlertFilter}
-                onClearFilters={handleResetQueueFilters}
-                onColumnChange={handleColumnChange}
-                onOwnerFilterChange={setOwnerFilter}
-                onSearchChange={setSearchTerm}
-                onSelectShipment={handleSelectShipment}
-                ownerFilter={ownerFilter}
-                ownerOptions={ownerOptions}
-                recordsForColumn={recordsForColumn}
-                searchTerm={searchTerm}
-                selectedShipmentId={selectedShipment.id}
-                visibleShipments={visibleShipments}
-              />
-
-              <div className="grid min-h-0 min-w-0 grid-cols-1 gap-3 xl:grid-rows-[auto_auto_minmax(0,1fr)]">
+              <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-3">
+                <QueuePanel
+                  activeColumn={activeColumn}
+                  alertFilter={alertFilter}
+                  onAlertFilterChange={setAlertFilter}
+                  onClearFilters={handleResetQueueFilters}
+                  onColumnChange={handleColumnChange}
+                  onOwnerFilterChange={setOwnerFilter}
+                  onSearchChange={setSearchTerm}
+                  onSelectShipment={openShipmentStatusEditor}
+                  ownerFilter={ownerFilter}
+                  ownerOptions={ownerOptions}
+                  recordsForColumn={recordsForColumn}
+                  searchTerm={searchTerm}
+                  selectedShipmentId={selectedShipment.id}
+                  visibleShipments={visibleShipments}
+                />
+              </div>
+            </>
+          ) : activeBookingSubNav === "柜子状态明细" ? (
+            <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-3 min-[1500px]:grid-cols-[minmax(0,1fr)_minmax(360px,400px)]">
+              <section className="grid min-h-0 min-w-0 grid-cols-1 gap-3">
                 <ShipmentDetailPanel
                   aiSummary={selectedShipment.aiSummary}
                   batchNo={selectedShipment.batchNo}
                   containerNo={selectedShipment.containerNo}
+                  createBookingPlanCheck={bookingPlanCreateCheck}
                   cutoffBadgeClassName={toneClass(cutoffTone(selectedShipment.hoursToCutoff))}
                   cutoffLabel={`截补料 ${selectedShipment.hoursToCutoff}h`}
-                  detailItems={shipmentHeaderItems}
                   nextAction={selectedShipment.nextAction}
+                  onCreateBookingPlan={openBookingPlanWorkflow}
+                  onOpenDetails={() => setDetailDrawerOpen(true)}
+                  shipmentBrief={shipmentBrief}
                   soNo={selectedShipment.soNo}
                   status={selectedShipment.status}
                   statusLevel={selectedShipmentLevel}
                   vesselVoyage={selectedShipment.vesselVoyage}
                 />
-
                 <ShipmentFieldPanel
                   fieldItems={fieldItems}
                   progressItems={documentProgressItems}
                   reminders={reminderChips}
                 />
-
-                <div className="grid min-h-0 min-w-0 grid-cols-1 gap-3">
-                  <ShipmentActionPanel
-                    actionItems={actionPanelItems}
-                    nextAction={selectedShipment.nextAction}
-                    onFollowUp={() => handleAction("催单提醒")}
-                    onRunRecommended={() => handleAction(recommendedActionCard.label)}
-                    recommendedAction={{
-                      detail: recommendedActionCard.detail,
-                      label: recommendedActionCard.label,
-                      status: recommendedActionCard.status,
-                      statusClassName: toneClass(progressTone(recommendedActionCard.status)),
-                    }}
-                  />
-
-                </div>
-              </div>
-            </section>
-
-            <AiCopilotPanel
-              aiInput={aiInput}
-              aiLastCompletedAt={aiLastCompletedAt}
-              aiLastPrompt={aiLastPrompt}
-              aiLastReplyLength={aiLastReplyLength}
-              aiReply={aiReply}
-              aiRequestState={aiRequestState}
-              onAiInputChange={setAiInput}
-              onAiInputKeyDown={handleAiInputKeyDown}
-              onQuickPrompt={(prompt) => {
-                setAiInput(prompt);
-                void sendToAi(prompt);
-              }}
-              onResetPrompt={() => setAiInput(quickPrompts[0])}
-              onSend={() => void sendToAi(aiInput)}
-              selectedShipment={selectedShipment}
-            />
-          </div>
+              </section>
+              <aside className="grid min-h-0 min-w-0 grid-cols-1 gap-3 content-start">
+                <button
+                  type="button"
+                  onClick={() => openShipmentStatusEditor(selectedShipment.id)}
+                  className="inline-flex min-h-11 items-center justify-center rounded-lg bg-cyan-600 px-3.5 text-sm font-medium text-white transition hover:bg-cyan-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/70"
+                >
+                  打开并编辑状态明细
+                </button>
+              </aside>
+            </div>
+          ) : activeBookingSubNav === "操作面板" ? (
+            <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-3 min-[1500px]:grid-cols-[minmax(0,1fr)_minmax(360px,400px)]">
+              <ShipmentActionPanel
+                actionItems={actionPanelItems}
+                nextAction={selectedShipment.nextAction}
+                onFollowUp={() => handleAction("催单提醒")}
+                onRunRecommended={() => handleAction(recommendedActionCard.label)}
+                recommendedAction={{
+                  detail: recommendedActionCard.detail,
+                  label: recommendedActionCard.label,
+                  status: recommendedActionCard.status,
+                  statusClassName: toneClass(progressTone(recommendedActionCard.status)),
+                }}
+              />
+              <AiCopilotPanel
+                aiInput={aiInput}
+                aiLastCompletedAt={aiLastCompletedAt}
+                aiLastPrompt={aiLastPrompt}
+                aiLastReplyLength={aiLastReplyLength}
+                aiReply={aiReply}
+                aiRequestState={aiRequestState}
+                onAiInputChange={setAiInput}
+                onAiInputKeyDown={handleAiInputKeyDown}
+                onQuickPrompt={(prompt) => {
+                  setAiInput(prompt);
+                  void sendToAi(prompt);
+                }}
+                onResetPrompt={() => setAiInput(quickPrompts[0])}
+                onSend={() => void sendToAi(aiInput)}
+                selectedShipment={selectedShipment}
+              />
+            </div>
+          ) : activeBookingSubNav === "邮件识别队列" ? (
+            <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-3">
+              <EmailRecognitionPanel
+                items={emailRecognitions}
+                onReview={(id, action) => void handleReviewEmailRecognition(id, action)}
+                onSync={() => void handleRunEmailSync()}
+                reviewingId={reviewingEmailRecognitionId}
+                syncing={emailSyncing}
+              />
+            </div>
+          ) : activeBookingSubNav === "AI 副驾" ? (
+            <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-3">
+              <AiCopilotPanel
+                aiInput={aiInput}
+                aiLastCompletedAt={aiLastCompletedAt}
+                aiLastPrompt={aiLastPrompt}
+                aiLastReplyLength={aiLastReplyLength}
+                aiReply={aiReply}
+                aiRequestState={aiRequestState}
+                onAiInputChange={setAiInput}
+                onAiInputKeyDown={handleAiInputKeyDown}
+                onQuickPrompt={(prompt) => {
+                  setAiInput(prompt);
+                  void sendToAi(prompt);
+                }}
+                onResetPrompt={() => setAiInput(quickPrompts[0])}
+                onSend={() => void sendToAi(aiInput)}
+                selectedShipment={selectedShipment}
+              />
+            </div>
+          ) : null}
         </section>
       </div>
+
+      {bookingWorkflowOpen ? (
+        <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label="新建订舱计划">
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-950/35"
+            onClick={() => {
+              if (!bookingDraftGenerating && !bookingWorkflowSending) setBookingWorkflowOpen(false);
+            }}
+            aria-label="关闭新建订舱计划"
+          />
+          <div className="absolute inset-x-3 top-3 bottom-3 mx-auto flex w-[min(1480px,calc(100vw-24px))] flex-col overflow-hidden rounded-lg bg-white shadow-2xl shadow-slate-950/25 sm:inset-x-5 sm:top-5 sm:bottom-5 sm:w-[min(1480px,calc(100vw-40px))]">
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <BookingPlanWorkflow
+                attachmentPreview={bookingWorkflowAttachment}
+                draft={bookingDraft}
+                form={bookingWorkflowForm}
+                hasPersistedDraft={Boolean(bookingWorkflowDraftId)}
+                onBackToQueue={() => setBookingWorkflowOpen(false)}
+                onChangeDraft={setBookingDraft}
+                onChangeForm={setBookingWorkflowForm}
+                onDownloadAttachment={() => void handleDownloadBookingInstruction()}
+                onGenerateDraft={() => void handleGenerateWorkflowDraft()}
+                onSendDraft={() => void handleSendWorkflowDraft()}
+                secondaryActionLabel="关闭"
+                saving={bookingDraftGenerating}
+                sending={bookingWorkflowSending}
+                shipment={selectedShipment}
+                statusMessage={bookingWorkflowStatus}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <BookingModal
         bookingChecklistItems={bookingChecklistItems}
@@ -971,6 +1398,22 @@ export function FreightflowWorkbenchPage() {
         recipientInput={recipientInput}
         recipientInputInvalid={recipientInputInvalid}
         shipment={bookingShipment}
+      />
+
+      <ShipmentDetailDrawer
+        groups={shipmentDetailGroups}
+        isOpen={detailDrawerOpen}
+        onClose={() => setDetailDrawerOpen(false)}
+        shipmentBrief={shipmentBrief}
+      />
+
+      <ShipmentStatusEditDrawer
+        draft={statusEditDraft}
+        isOpen={statusEditDrawerOpen}
+        onChangeDraft={setStatusEditDraft}
+        onClose={() => setStatusEditDrawerOpen(false)}
+        onSave={handleSaveShipmentStatusEdit}
+        shipment={selectedShipment}
       />
 
       <OpenClawSettingsModal

@@ -1,5 +1,115 @@
 # FreightFlow AI Handover
 
+最后更新：2026-06-14
+当前分支：`codex/booking-plans-phase-1`
+最新提交：以 `git log -1 --oneline` 为准
+
+## 0. 2026-06-14 本次交接更新
+
+### 2026-06-14 · Product Design · 货代自动化作业系统总说明入库
+
+- **远程仓库纠正**:正确 GitHub 远程是 `https://github.com/zqj372-ops/FreightFlow-AI.git`;`NEW-FR-AI.git` 属于用户另一个项目,不得继续推送本项目代码。
+- **产品说明入库**:用户提供的《货代自动订舱系统 · 设计文档》已作为 [product-design.md](./product-design.md) 纳入仓库。
+- **产品定位更新**:FreightFlow AI 统一描述为货代自动化作业系统的 AI 工作台与自动化机器人中枢,目标是把货代日常 70% 的“催、抄、录、查”交给系统完成。
+- **稳定文档同步**:README、[project-overview.md](./project-overview.md)、[business-rules.md](./business-rules.md)、[master-plan.md](./master-plan.md)、[todo.md](./todo.md) 已同步订舱、SO识别、补料、柜子跟踪、报关/清关、派送、财务识别和数据互通规划。
+- **队列卡片产品方向**:队列卡片应作为“异常优先的订舱操作行卡”,只回答这票是谁、去哪、卡在哪、什么时候危险、下一步做什么;完整字段继续放详情弹窗编辑。
+- **本地工具目录保护**:`.opencode/` 已加入 `.gitignore`,避免本地工具依赖被误提交。
+
+### 2026-06-14 · Track B · IMAP 真拉信 + 邮件同步状态机
+
+- **目标**:`/api/email-sync/run` 从 mock-only 切换为真 IMAP 拉信并实现完整的状态机。`runSync` 在无 IMAP 配置时仍然能跑通(走 `MockEmailPullProvider`)。
+- **改动文件**:
+  - `src/lib/services/email/types.ts` — 新增 `EmailPullProvider`、`EmailMessageMetadata`、`EmailMessageFull`、`EmailSearchOptions`、`SyncReport`、`SyncReportError`、`RunSyncOptions`。原 `EmailProvider`(send) 类型保持不变。
+  - `src/lib/services/email/imap-pull-provider.ts` — 新增 `ImapPullProvider`,基于 `imapflow` 真实 `search` + `fetch`,支持 `since` 增量、`limit` 裁剪、mailbox 选择。注入式 `factory` 便于测试。
+  - `src/lib/services/email/mock-pull-provider.ts` — 新增 `MockEmailPullProvider`,3 条固定 fixture,提供 `search` / `fetchFull`。
+  - `src/lib/services/email/email-service.ts` — 新增 `runSync(options, deps?)`、`createPullProvider`、`defaultTriggerRecognition`、`drainInMemorySyncFailures`。原有 `sendShipmentEmail` / `listShipmentEmailLogs` 等发送侧 API 不变。
+  - `src/app/api/email-sync/run/route.ts` — 改为接受 `POST { mailbox?, limit?, fullSync? }`,返回 `SyncReport` JSON;鉴权留待后续 Track。
+  - `src/lib/services/email/email-service.test.ts` — 新增 10 个用例,覆盖 5 大场景:mock happy-path、dedupe(已存在 + 唯一约束冲突)、provider 抛错(search/fetch/persist 三类)、syncStatus 状态机 NEW→PARSED、config fallback。
+  - `.env.example` — 在 `IMAP_*` 字段后追加 pull-sync 行为说明。
+- **SyncReport 字段**:
+  ```ts
+  type SyncReport = {
+    provider: string;            // "imap" | "mock-pull" | "stub-pull" | "unknown"
+    scanned: number;             // provider.search 返回的元数据条数
+    fetched: number;             // 成功 fetchFull 的条数
+    newInserted: number;         // 写入 EmailMessage(syncStatus=NEW) 的条数
+    duplicatesSkipped: number;   // 已存在 messageId 的条数
+    errorCount: number;          // errors[].length 的快速读取
+    startedAt: string;           // ISO 8601
+    finishedAt: string;          // ISO 8601
+    errors: SyncReportError[];   // { code, message, messageId?, stage }
+  };
+  ```
+- **状态机**(沿用 schema `EmailMessageSyncStatus`):
+  ```
+  search → fetch → persist (NEW) → trigger → PARSED → [Track M3] QUEUED → CONFIRMED/IGNORED/FAILED
+  ```
+  - `defaultTriggerRecognition` 当前只把 `syncStatus` 切到 `PARSED`,Track M3 接入真正的分类器后,该 hook 会顺接 `QUEUED`。
+  - FAILED 落库路径:DB schema 当前没有 `errorMessage` 列,失败记录先入 `inMemorySyncFailures` 并打 `DB column missing - TODO` 标记;后续 schema 升级再补字段(本轮不改 schema)。
+- **Provider 选择策略**:
+  - `.freightflow/email-config.json` 存在且 `enabled=true` 且 `imapHost + username + password` 齐全 → `ImapPullProvider`。
+  - 否则读取 `IMAP_HOST + SMTP_USERNAME + SMTP_PASSWORD` env → `ImapPullProvider`。
+  - 以上均不满足 → `MockEmailPullProvider`(dev/test 默认)。
+  - **真实 IMAP 拉信失败必须显式报错**,严禁 silently 回退到 mock(provider 异常直接 throw 到 `runSync` 顶层,route 渲染 5xx)。
+- **增量同步**:`runSync` 默认 `fullSync=false`,会查 `EmailMessage.findFirst({ orderBy: receivedAt desc })` 取最近一封 `receivedAt` 作为 `since` 过滤;`fullSync=true` 时跳过 `since` 拉整 INBOX。
+- **测试**:`npm test` 现有 9 文件 / 66 用例 + 新增 1 文件 / 10 用例 = 10 文件 / 76 用例全部通过,新增文件 0 TS strict 错误;`npx tsc --noEmit` 中所有新增/修改文件无报错(预存在的 13 条报错位于 `src/components/workbench-shell.tsx` 与 `email-recognition-service.test.ts`,不在本 Track 范围)。
+- **交付门**:Track B 交付不依赖 Track A(repositories/)。`runSync` 直接走 `prisma.emailMessage.*`;`repositories/` 后续 Track 接入时只需替换该层。
+
+### 2026-06-14 · Track A · 订舱流程数据层抽象 (mock + prisma 可切换)
+
+- **目标**:在不动前端 mock 演示体验的前提下,把订舱流程核心数据操作抽到 `src/lib/repositories/` 仓储层,`getRepositories()` 工厂根据 `DATABASE_URL` 自动选择 mock 或 prisma 适配器并打 INFO 日志;以前直接 `import mock-data` 的 API 路由改走仓储。
+- **新增接口**(`src/lib/repositories/`,每个一个文件,导 type + interface):
+  - `ShipmentRepository` — `list / getById / advanceStatus / recordActionLog`
+  - `BookingPlanRepository` — `list / getByShipmentId / upsertForShipment / updateStatus / bindLastDraft`
+  - `EmailDraftRepository` — `list / getById / create / update / markSent`
+  - `EmailMessageRepository` — `list / getById / getByMessageId / create / updateSyncStatus`
+  - `EmailRecognitionRepository` — `listPending / getById / create / updateStatus`
+  - `ContactRepository` — `list / getByEmail`
+- **新增 mock 适配器**(`src/lib/repositories/mock/`):模块级 `mock-store.ts` 共享 store,启动时 seed 6 条 Shipment + 派生 BookingPlan + EmailDraft + 3 条 EmailMessage + 对应 EmailRecognitionResult;`MockShipmentRepository.advanceStatus` 使用 `structuredClone` 防止调用方污染内部 store;`MockEmailDraftRepository.markSent` 写入 `sentEmailLogId + lastError` 并把 status 切换到 `sent`。
+- **新增 prisma 适配器**(`src/lib/repositories/prisma/`):走 `@prisma/client` 真实表;统一处理 `DbBookingPlanStatus / DbEmailDraftStatus / DbEmailRecognitionStatus / DbEmailMessageSyncStatus / DbShipmentActionType / DbActionSource / DbContactRole` 的 enum 映射;`PrismaShipmentRepository.advanceStatus` 复用 `freightflow-data.ts` 中的 `shipmentUpdateData` 走 `documentProgress.upsert` + `exceptions/reminderFlags` 重写,与既有真实库行为一致。
+- **工厂**(`src/lib/repositories/index.ts`):
+  - `getRepositories()` 首次调用做 `DATABASE_URL` 探测:`$queryRaw SELECT 1`,失败则走 `mock` 模式(对 `isPrismaUnavailable` 的 catch 兼容)。
+  - 缓存同一个 bundle 在模块级变量,避免多次新建;`__resetRepositoryCache()` 给测试用。
+  - 打一行 `console.info("[repositories] using Prisma (DATABASE_URL detected) data layer")` 或 `... in-memory mock (DATABASE_URL not configured) data layer`。
+  - barrel 同步 re-export 所有 repo 类型,call site 只需 `import { getRepositories, type BookingPlanRecord } from "@/lib/repositories"`。
+- **API 路由重构**:
+  - `src/app/api/shipments/route.ts` — 改用 `repos.shipments.list()`,根据 `repos.mode` 返回 `{ data, source: "database" }` 或 `{ data, source: "mock", warning }`。
+  - `src/app/api/shipments/[id]/route.ts` — 改用 `repos.shipments.getById()`,404 时根据 mode 返回 `"Shipment not found."` 或 `"Shipment not found in mock fallback."`,与原行为对齐。
+  - `src/app/api/email-recognitions/route.ts` — 改用 `repos.emailRecognitions.listPending()`,mock 模式下回退到 `listMockEmailRecognitionQueue`。
+  - `src/app/api/booking-plans/route.ts` / `src/app/api/booking-plans/batch-drafts/route.ts` / `src/app/api/email-drafts/[draftId]/route.ts` / `src/app/api/email-drafts/[draftId]/send/route.ts` / `src/app/api/email-recognitions/[id]/review/route.ts` — **保持现状**,继续走既有 service。service 内部使用 `prisma.$transaction` 处理多表一致(如 `sendEmailDraft` 同时更新 draft + plan + shipment),把交易型操作迁到仓储需要引入事务抽象(超出本 Track 范围,留待后续 Track 评估)。
+- **新测试**(`src/lib/repositories/__tests__/` 共 6 个文件 / 29 个用例):
+  - `factory.test.ts` — 工厂在 `DATABASE_URL` 缺失 / 不可达 / 配置正确时的 mode 选择,bundle 形状稳定,store seed 一致。
+  - `booking-plan-repository.test.ts` — list / getByShipmentId / upsertForShipment / updateStatus / bindLastDraft / 未知 id 返回 null。
+  - `email-draft-repository.test.ts` — list / getById / create / update / markSent / 未知 id 返回 null。
+  - `shipment-repository.test.ts` — list / getById 深拷贝隔离 / advanceStatus / recordActionLog / 缺失 ID 返回 null。
+  - `email-recognition-repository.test.ts` — 种子 EmailMessage + Recognition 关联 / `listPending` 过滤 / `updateStatus` 切到 confirmed 后从队列中消失。
+  - `contact-repository.test.ts` — 列表 = `getFallbackContacts`,大小写不敏感 email 查找。
+  - `src/app/api/shipments/route.test.ts` — `GET /api/shipments` 在 mock 模式返回 6 条 + warning;`GET /api/shipments/SHP-240610-002` 返回 200;`GET /api/shipments/<missing>` 返回 404;`GET /api/email-recognitions` 在 mock 模式返回 `pending_review` 队列。
+- **强制约束验证**:
+  - `npx tsc --noEmit` 4 条预存报错(均在 `email-recognition-service.test.ts` 与 `workbench-shell.tsx` 与本 Track 无关);新文件 0 报错。
+  - `npm test`:基线 10 文件 / 76 用例 + 新增 7 文件 / 32 用例 = **17 文件 / 108 用例全过**。
+  - `npx eslint src/lib/repositories src/app/api/shipments src/app/api/email-recognitions`:0 警告 0 错误。
+  - 未引入新运行时依赖。
+  - 仓储接口不依赖 `next/server` 或任何 next 专属类型。
+  - mock 适配器复用 `mock-data.ts` 与 `getFallbackContacts()`,不写死假数据。
+- **遗留问题 / 后续 Track**:
+  - 5 个走 service 的 API 路由的 service 内部仍是 `prisma.*` 直接调用,后续 Track 评估是否把单表 CRUD 也走仓储 + 把 `prisma.$transaction` 抽成仓储事务。
+  - `EmailRecognitionRepository.getById` / `MockEmailRecognitionRepository` 的 email message join 行为目前服务于识别队列,后续 Track 接入 review writeback 时可直接复用。
+  - 数据库 schema 仍按既有定义,本 Track 未改 `prisma/schema.prisma`。
+
+
+
+
+- 已确认正确 GitHub 远程仓库为 `https://github.com/zqj372-ops/FreightFlow-AI.git`;`NEW-FR-AI.git` 是用户的另一个项目,不得继续推送本项目代码。
+- 已将用户提供的《货代自动订舱系统 · 设计文档》纳入仓库:[product-design.md](./product-design.md)。
+- 已同步更新产品定位:FreightFlow AI 是货代自动化作业系统的 AI 工作台与自动化机器人中枢,目标是把货代日常 70% 的“催、抄、录、查”交给系统完成。
+- 已更新 [project-overview.md](./project-overview.md)、[business-rules.md](./business-rules.md)、[master-plan.md](./master-plan.md)、[todo.md](./todo.md) 和 README,把订舱、SO识别、补料、柜子跟踪、报关/清关、派送、财务识别的产品规划写入稳定文档。
+- 已启动两个智能体并完成只读分析:
+  - 产品文档智能体:梳理产品定位、模块、流程和应写入仓库的文档结构。
+  - UI 结构智能体:确认当前队列卡片应改为“异常优先的订舱操作行卡”,完整字段保留在详情弹窗。
+- 已将队列卡片从“全量资料卡”调整为“操作队列行卡”:卡片只展示批次、状态、负责人、航线、船名航次、柜号、SO、订舱代理、单证状态、最近截止、ETD、件毛体、下一步和推荐动作;发货人/收货人/通知方/拖车行/报关行/完整截单截重截关等字段放回详情弹窗编辑。
+- 已把 `.opencode/` 加入 `.gitignore`,避免本地工具目录和 node_modules 被误提交。
+
 ## 1. 已完成功能
 
 - 已搭建 Next.js 16 + React 19 + TypeScript + Tailwind CSS 4 的前端项目骨架。
@@ -14,7 +124,22 @@
   - 搜索批次号 / SO / 柜号 / 船公司 / 目的港 / 操作员 / 状态
   - 按负责人筛选
   - 按红黄绿告警等级筛选
-  - 选中单柜后展示当前上下文
+  - 队列卡片已改为“订舱跟踪详情卡片”
+  - 单击队列卡片打开可编辑详情弹窗
+  - 已取消双击编辑逻辑
+  - 点击 SO / 柜号链接可跳到船公司查询页，且不会误触发卡片弹窗
+- 已完成订舱跟踪详情卡片第一版：
+  - 保留浅蓝色卡片风格，并压缩回接近早期队列卡片的高度
+  - 顶部展示批次号、截单 / 截重 / 截关灰色胶囊和当前状态标签
+  - 第二行突出展示柜号、SO号、订舱代理、海运费报价
+  - 中间表格展示柜型、船名 / 航次、件数 / 毛重 / 体积、ETD / ETA、拖车行、报关行、提单电放确认、当前状态
+  - 空字段统一显示 `-`，避免出现 `undefined` / `null`
+  - 提单电放确认状态按颜色区分：未确认灰色、待确认橙色、已确认绿色
+- 已完成订舱跟踪详情编辑弹窗：
+  - 标题为“订舱跟踪详情”
+  - 支持人工修正状态、SO状态、SO号、柜号、船公司、船名、航次、ETD、ETA、截单、截重、截关
+  - 支持人工录入海运费报价、件数、毛重、体积、拖车行、报关行、提单电放确认
+  - 保存后更新当前工作台内的 Shipment 状态
 - 已完成单柜动作流的前端状态推进：
   - 订舱邮件
   - 催单提醒
@@ -33,6 +158,22 @@
   - 自定义 prompt 输入
   - 请求状态展示（idle / loading / success / error）
   - AI 返回文本格式化渲染
+- 已完成邮件识别人工审核闭环：
+  - 邮件识别队列提供“确认写入 / 标记异常 / 忽略”中文操作
+  - `POST /api/email-recognitions/[id]/review` 统一处理审核动作
+  - SO 回传、补料确认、订舱/催单回复、异常邮件均需操作员确认后才写回 Shipment
+  - 忽略动作只关闭识别项,不写回 Shipment
+- 已完成邮件同步入口和订舱机器人中台雏形：
+  - 邮件识别队列作为顶部二级页面入口
+  - 支持“同步邮箱”入口，当前仍为 mock 入队
+  - AI 副驾作为顶部入口，打开后进入对应二级工作区
+- 已完成订舱计划工作流前端能力：
+  - 顶部保留“新建订舱计划”快捷按钮
+  - 新建订舱计划使用弹窗表单，而不是跳转二级页面
+  - 支持批量生成订舱草稿
+  - 支持操作员手动确认后发送订舱邮件
+  - 支持等待代理放舱阶段生成内部批次号
+  - SO 信息等待代理回传后再由邮件识别写回
 - 已完成 `/api/ai/openclaw` 路由：
   - 未配置环境变量时返回 stub 响应
   - 配置 `OPENCLAW_API_URL` 后转发到外部服务
@@ -40,6 +181,14 @@
   - `GET /api/shipments`
   - `GET /api/shipments/[id]`
   - `POST /api/shipments/[id]/actions`
+  - `GET /api/booking-plans`
+  - `POST /api/booking-plans`
+  - `POST /api/booking-plans/batch-drafts`
+  - `GET /api/email-recognitions`
+  - `POST /api/email-sync/run`
+  - `POST /api/email-drafts/[draftId]/send`
+  - `GET /api/settings/email`
+  - `POST /api/settings/email`
   - `GET /api/contacts`
   - `POST /api/contacts`
 - 已完成 Prisma 数据层落库路径：
@@ -60,19 +209,31 @@
 ```text
 freightflow-ai/
 ├── docs/
-│   └── handover.md
+│   ├── business-rules.md
+│   ├── database.md
+│   ├── handover.md
+│   ├── master-plan.md
+│   ├── project-overview.md
+│   ├── superpowers/
+│   │   ├── plans/
+│   │   └── specs/
+│   └── todo.md
+├── prisma/
+│   ├── migrations/
+│   ├── schema.prisma
+│   └── seed.mjs
 ├── public/
-│   ├── file.svg
-│   ├── globe.svg
-│   ├── next.svg
-│   ├── vercel.svg
-│   └── window.svg
 ├── src/
 │   ├── app/
 │   │   ├── api/
-│   │   │   └── ai/
-│   │   │       └── openclaw/
-│   │   │           └── route.ts
+│   │   │   ├── ai/
+│   │   │   ├── booking-plans/
+│   │   │   ├── contacts/
+│   │   │   ├── email-drafts/
+│   │   │   ├── email-recognitions/
+│   │   │   ├── email-sync/
+│   │   │   ├── settings/
+│   │   │   └── shipments/
 │   │   ├── favicon.ico
 │   │   ├── globals.css
 │   │   ├── layout.tsx
@@ -81,10 +242,15 @@ freightflow-ai/
 │   │   └── workbench-shell.tsx
 │   ├── features/
 │   │   └── freightflow/
+│   │       ├── detail-panels.tsx
 │   │       ├── page-helpers.ts
+│   │       ├── page-helpers.test.ts
+│   │       ├── workbench-page.tsx
 │   │       └── shared-ui.tsx
 │   └── lib/
-│       └── mock-data.ts
+│       ├── freightflow-data.ts
+│       ├── mock-data.ts
+│       └── prisma.ts
 ├── .env.example
 ├── .gitignore
 ├── README.md
@@ -120,17 +286,28 @@ type ShipmentRecord = {
   soNo: string;
   containerNo: string;
   bookingAgent: string;
+  oceanFreightPrice?: string;
   carrier: string;
   originPort: string;
   transitPort: string;
   destinationPort: string;
   containerType: string;
+  vesselName?: string;
+  voyageNo?: string;
   vesselVoyage: string;
+  packages?: string;
+  grossWeight?: string;
+  cbm?: string;
   etd: string;
   eta: string;
   cutoffTime: string;
+  cutWeightTime?: string;
+  cutCustomsTime?: string;
   pickupLocation: string;
   returnLocation: string;
+  truckingCompany?: string;
+  customsBroker?: string;
+  blTelexStatus?: "未确认" | "待确认" | "已确认";
   status: ShipmentStatus;
   operator: string;
   followUpCount: number;
@@ -175,14 +352,26 @@ type ShipmentRecord = {
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/app/globals.css`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/ai/openclaw/route.ts`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/ai/openclaw/route.test.ts`
+- `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/booking-plans/route.ts`
+- `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/booking-plans/batch-drafts/route.ts`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/contacts/route.ts`
+- `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/email-drafts/[draftId]/send/route.ts`
+- `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/email-recognitions/[id]/review/route.ts`
+- `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/email-recognitions/route.ts`
+- `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/email-sync/run/route.ts`
+- `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/settings/email/route.ts`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/shipments/route.ts`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/shipments/[id]/route.ts`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/shipments/[id]/actions/route.ts`
+- `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/shipments/[id]/documents/so-recognition/route.ts`
+- `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/shipments/[id]/documents/supplement-template/route.ts`
+- `/Users/autumn/Documents/Codex/freightflow-ai/src/app/api/shipments/[id]/emails/route.ts`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/components/workbench-shell.tsx`
+- `/Users/autumn/Documents/Codex/freightflow-ai/src/features/freightflow/detail-panels.tsx`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/features/freightflow/page-helpers.ts`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/features/freightflow/page-helpers.test.ts`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/features/freightflow/shared-ui.tsx`
+- `/Users/autumn/Documents/Codex/freightflow-ai/src/features/freightflow/workbench-page.tsx`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/lib/mock-data.ts`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/lib/mock-data.test.ts`
 - `/Users/autumn/Documents/Codex/freightflow-ai/src/lib/freightflow-data.ts`
@@ -198,11 +387,13 @@ type ShipmentRecord = {
 
 - 本机尚无可用 PostgreSQL 服务,因此 Prisma migration / seed 未实际落库验证。
 - 前端主工作台尚未从 mock/useState 切到 shipment/contact API。
-- booking modal 仍然是前端本地模拟发送，没有真实 SMTP / 邮件服务集成。
+- 真实 IMAP 拉信尚未接入识别服务,当前同步接口仍用 mock message 入队。
+- 邮件发送接口已有草稿发送路径，但真实 SMTP / 企业邮箱发送凭据尚未接入生产验证。
+- 订舱附件生成目前是前端/接口模拟预览，尚未接入真实文件模板、文件上传和对象存储。
 - 通讯录 API 已可持久化到 `contacts`,但 booking modal 尚未接入该 API。
 - AI 接口虽然有代理路由，但未验证真实 OpenClaw 服务的返回协议稳定性。
 - `OPENCLAW_API_URL`、`OPENCLAW_API_KEY` 仅预留，未形成完整部署说明。
-- 页面仍然较大，`src/app/page.tsx` 还没有完全拆成 feature-level 组件。
+- 页面已拆出 `workbench-page.tsx`、`detail-panels.tsx`、`workbench-shell.tsx` 等模块，但仍需继续收敛状态管理边界。
 - `src/features/freightflow/shared-ui.tsx` 中的 `ActionTile` 已创建，但当前主页面仍使用本地 `ActionTile` 实现，尚未统一。
 - 已有 Vitest 最小单测基线,但尚未配置覆盖率报告 / 覆盖率阈值。
 - 没有 E2E 测试。
@@ -213,7 +404,22 @@ type ShipmentRecord = {
 
 ## 6. 下一步建议
 
-### 6.1 先做数据层落地
+### 6.1 先做真实 IMAP / SMTP 闭环
+
+建议优先完成：
+
+1. 接入 IMAP 拉信并写入 email recognition 队列
+2. 接入 SMTP 或企业邮箱 API 发送订舱邮件
+3. 将“操作员确认后发送”记录成可审计日志
+4. 将 SO 回传邮件识别结果写回 Shipment
+
+优先级原因：
+
+- 当前产品核心是内部操作工作台 + 自动化机器人中台
+- 订舱邮件发送和代理 SO 回传是最小业务闭环
+- 没有真实邮箱接入时，只能做演示，不能进入试运营
+
+### 6.2 再做数据层落地
 
 建议优先完成：
 
@@ -226,7 +432,7 @@ type ShipmentRecord = {
 - 当前大部分交互已经可演示，但数据不可持久化
 - 如果继续堆前端能力而不落数据层，后续返工成本会更高
 
-### 6.2 再做页面拆分
+### 6.3 再做页面拆分
 
 建议将 `src/app/page.tsx` 继续拆分为：
 
@@ -242,7 +448,7 @@ type ShipmentRecord = {
 - 拆分时先抽纯展示组件，再抽交互逻辑
 - booking modal 和 AI panel 都已经有较多状态，适合独立为 feature 组件
 
-### 6.3 统一共享组件边界
+### 6.4 统一共享组件边界
 
 建议下一轮整理时：
 
@@ -252,7 +458,7 @@ type ShipmentRecord = {
   - freightflow feature helper
   - 全局 UI helper
 
-### 6.4 扩展测试基线
+### 6.5 扩展测试基线
 
 已完成最小基线：
 
@@ -267,7 +473,7 @@ type ShipmentRecord = {
 - API 数据层在 mock/stub DB 下的单测
 - Playwright E2E 覆盖订舱主链路
 
-### 6.5 真实业务接入顺序建议
+### 6.6 真实业务接入顺序建议
 
 推荐顺序：
 
@@ -278,6 +484,26 @@ type ShipmentRecord = {
 5. SO / 补料 / 申报文档流
 6. AI 请求审计与历史记录
 
+## 7. 最近验证记录
+
+最近一次推送前验证：
+
+```text
+npm test      -> 8 files passed, 63 tests passed
+npm run lint  -> passed
+npm run build -> passed
+```
+
+最近相关提交：
+
+```text
+6f28469 fix: compact tracking cards and edit on click
+246964a feat: show booking tracking details in queue cards
+d100f59 fix: use modals for booking and shipment details
+6174ed1 fix: keep queue page focused on shipment list
+e466fcf feat: defer SO entry until release recognition
+```
+
 ## 补充说明
 
 - 当前项目可以正常构建，最近一次验证已通过 `npm run build`。
@@ -286,7 +512,7 @@ type ShipmentRecord = {
 - 当前 `npm run prisma:seed` 因本机 PostgreSQL 不可达失败:`P1001 Can't reach database server at 127.0.0.1:5432`。
 - 当前项目更接近“高保真前端操作台原型 + AI 代理入口”，还不是完整的生产业务系统。
 
-## 7. 变更日志
+## 8. 变更日志
 
 ### 2026-06-11 · P0 / 数据层/API / shipments 与 contacts
 
@@ -714,3 +940,61 @@ type ShipmentRecord = {
   - `npx tsc --noEmit --incremental false` 通过
   - `npm test` 通过,4 个测试文件 / 29 个用例
   - `npm run build` 通过
+# 2026-06-13 · 待发订舱计划 Phase 1
+
+- 新增产品设计文档: `docs/superpowers/specs/2026-06-13-freightflow-ai-ops-mail-workbench-design.md`。
+- 新增实施计划: `docs/superpowers/plans/2026-06-13-booking-plans-phase-1.md`。
+- 新增待发订舱计划纯规则: `src/features/freightflow/booking-plan-rules.ts`,覆盖资料完整度、中文订舱草稿和批量结果统计。
+- 新增待发订舱计划面板: `src/features/freightflow/booking-plan-panel.tsx`,工作台可查看待处理、可生成、草稿待确认数量并批量生成草稿。
+- 新增 Prisma 模型和迁移: `booking_plans`, `email_drafts`, `booking_draft_batches`。
+- 新增 API: `GET /api/booking-plans`, `POST /api/booking-plans/batch-drafts`, `GET/PATCH /api/email-drafts/[draftId]`, `POST /api/email-drafts/[draftId]/send`。
+- 重要边界:批量操作只生成中文订舱草稿,不会自动发送;发送仍走单票人工确认。
+- 验证: `npm run prisma:validate`, `npm run lint`, `npm test`, `npm run build` 均通过。
+
+# 2026-06-13 · IMAP 邮件识别队列 Phase 2
+
+- 新增实施计划: `docs/superpowers/plans/2026-06-13-imap-recognition-phase-2.md`。
+- 新增邮件识别纯规则: `src/features/freightflow/email-recognition-rules.ts`,覆盖 SO 回传、订舱回复、补料确认、催单回复、异常、未知。
+- 新增邮件识别服务: `src/lib/services/email-recognition/email-recognition-service.ts`,支持 mock 同步、messageId 去重、识别结果入队和数据库不可用 fallback。
+- 新增 Prisma 模型和迁移: `email_messages`, `email_recognition_results`。
+- 新增 API: `POST /api/email-sync/run`, `GET /api/email-recognitions`。
+- 新增工作台面板: `src/features/freightflow/email-recognition-panel.tsx`,显示待确认、异常、已匹配统计和同步邮箱按钮。
+- 重要边界:本阶段只同步、识别、入队和展示,不自动写回 Shipment。
+- 验证: `npm run lint`, `npm test`, `npm run build` 均通过。
+
+# 2026-06-18 · 模块整合与左侧主入口收口
+
+- 重新拉取 GitHub 仓库并在 `codex/complete-modules` 分支整合远端 `codex/booking-plans-phase-1` 增强基线。
+- 新增/吸收模块:
+  - 订舱计划与邮件草稿: `booking_plans`, `email_drafts`, `booking_draft_batches`, 批量生成草稿与单票确认发送。
+  - 邮件识别: `email_messages`, `email_recognition_results`, IMAP/mock 拉信、规则识别、人工审核写回。
+  - Repository 层: mock + Prisma 双实现,覆盖 shipment / contact / booking plan / email draft / email message / recognition。
+  - 文档生成: DOCX 托书与 XLSX 补料表下载 API,新增 `docx` / `xlsx` 依赖与模板文件。
+- 新增 `src/features/freightflow/module-panels.tsx`:
+  - `SO识别中心`:待识别 SO、SO/订舱回复邮件队列、人工审核入口。
+  - `补料中心`:补料状态汇总、当前柜生成补料、逐票下载补料表。
+  - `AMS/ACI/ISF`:申报进度汇总、当前柜推进申报、逐票明细入口。
+  - `邮件中心`:待发订舱计划、批量生成草稿、邮箱设置入口、邮件识别队列。
+  - `异常中心`:红色异常、黄色预警、当前柜异常切换、逐票明细入口。
+- 更新 `src/features/freightflow/workbench-page.tsx`:
+  - 左侧主导航不再只切换标题;除订舱工作台外,其它主模块会进入对应工作面板。
+  - 增加待发订舱计划多选状态与批量草稿生成处理。
+  - 设置弹窗支持从邮件中心直达邮箱 tab。
+- 更新数据库 fallback:
+  - `src/lib/prisma.ts` 导出 `isDatabaseConfigured()`。
+  - `src/lib/repositories/index.ts` 与 `src/app/api/contacts/route.ts` 使用同一配置判断。
+  - 未配置 `DATABASE_URL` 时联系人 API 直接返回 mock/503,不再先触发 Prisma 连接错误日志。
+- 开源参考扫描:
+  - 查看 `loadpartner/tms`、`fleetbase/fleetbase`、`AgileShift/cargo_management`、`MustafaYamin/logistics-crm-nextjs`、邮件摄取类 TypeScript 项目。
+  - 结论:其中 AGPL、Other 或无许可证项目较多,本次只参考 TMS 模块边界、邮件摄取队列和操作台组织方式,未复制外部代码。
+- 文档更新:
+  - `docs/project-overview.md` 标记左侧主模块已接入真实面板,并记录开源参考取舍。
+  - `docs/todo.md` 更新文档生成、主模块入口和 E2E 验收建议。
+- 验证结果:
+  - `npm install` 成功。
+  - `npm run prisma:generate` 成功。
+  - `npm run prisma:validate` 通过。
+  - `npm run lint` 通过。
+  - `npm test` 通过,17 个测试文件 / 108 个用例。
+  - `npm run build` 通过。
+  - 本地 dev server `http://127.0.0.1:3000` 启动成功;首页 200,`/api/shipments`、`/api/contacts`、`/api/email-recognitions` 均以 mock source 返回正常数据。

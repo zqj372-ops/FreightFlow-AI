@@ -6,11 +6,19 @@ import {
   normalizeContactInput,
   toContactRecord,
 } from "@/lib/freightflow-data";
-import { prisma } from "@/lib/prisma";
+import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  if (!isDatabaseConfigured()) {
+    return NextResponse.json({
+      data: getFallbackContacts(),
+      source: "mock",
+      warning: "DATABASE_URL is unavailable; returned mock contacts.",
+    });
+  }
+
   try {
     const contacts = await prisma.contact.findMany({
       where: { isActive: true },
@@ -37,6 +45,16 @@ export async function POST(request: Request) {
 
   if ("error" in parsed) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
+
+  if (!isDatabaseConfigured()) {
+    return NextResponse.json(
+      {
+        error: "Database is unavailable; creating contacts requires PostgreSQL persistence.",
+        source: "mock",
+      },
+      { status: 503 },
+    );
   }
 
   try {

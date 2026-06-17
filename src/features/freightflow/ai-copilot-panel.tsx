@@ -199,7 +199,9 @@ export function AiCopilotPanel({
             <div className="rounded-xl border border-slate-800/80 bg-slate-900/70 px-3 py-3">
               <p className="text-[11px] text-slate-500">当前柜子</p>
               <p className="mt-2 text-sm font-medium text-slate-100 break-words">{selectedShipment.batchNo}</p>
-              <p className="mt-2 text-[11px] leading-5 text-slate-400 break-words">{selectedShipment.containerNo} · SO {selectedShipment.soNo}</p>
+              <p className="mt-2 text-[11px] leading-5 text-slate-400 break-words">
+                {selectedShipment.containerNo} · SO {selectedShipment.soStatus === "已识别" ? selectedShipment.soNo : "待代理回传"}
+              </p>
             </div>
             <div className="rounded-xl border border-slate-800/80 bg-slate-900/70 px-3 py-3">
               <p className="text-[11px] text-slate-500">当前状态</p>

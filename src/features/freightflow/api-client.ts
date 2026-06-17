@@ -1,6 +1,49 @@
 import type { ShipmentRecord } from "@/lib/mock-data";
 
+import type { BookingDraftBatchResult, BookingPlanRecord } from "./booking-plan-rules";
 import type { BookingDraft, ContactRecord, DetailActionLabel } from "./page-helpers";
+
+export type EmailDraftRecord = BookingDraft & {
+  createdAt?: string;
+  id: string;
+  lastError: string | null;
+  shipmentId: string;
+  status: "draft" | "failed" | "pending_review" | "sent";
+  updatedAt?: string;
+};
+
+export type EmailRecognitionQueueItem = {
+  bodyPreview: string;
+  confidence: number;
+  emailMessageId: string;
+  from: string;
+  id: string;
+  matchedShipmentId: string | null;
+  messageId: string;
+  receivedAt: string;
+  recognitionType: "BOOKING_REPLY" | "EXCEPTION" | "FOLLOW_UP_REPLY" | "SO_RECEIVED" | "SUPPLEMENT_CONFIRMED" | "UNKNOWN";
+  riskFlags: string[];
+  status: "confirmed" | "ignored" | "pending_review" | "rejected";
+  subject: string;
+  summary: string;
+};
+
+export type EmailRecognitionSyncResult = {
+  duplicateCount: number;
+  importedCount: number;
+  recognitions: EmailRecognitionQueueItem[];
+};
+
+export type EmailRecognitionReviewAction = "confirm" | "ignore" | "mark_exception";
+
+export type EmailRecognitionReviewResult = {
+  recognitionId: string;
+  shipmentId: string | null;
+  status: "confirmed" | "ignored" | "rejected";
+  summary: string;
+};
+
+export type ShipmentDocumentKind = "booking-template" | "supplement-template";
 
 type ApiEnvelope<T> = {
   data?: T;
@@ -90,6 +133,51 @@ async function readJson<T>(response: Response) {
   return (await response.json().catch(() => ({}))) as ApiEnvelope<T>;
 }
 
+function fileNameFromDisposition(disposition: string | null, fallback: string) {
+  if (!disposition) return fallback;
+
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/)?.[1];
+  if (encoded) return decodeURIComponent(encoded);
+
+  const plain = disposition.match(/filename="?([^";]+)"?/)?.[1];
+  return plain ? plain.trim() : fallback;
+}
+
+export async function downloadShipmentDocumentFromApi({
+  kind,
+  shipment,
+}: {
+  kind: ShipmentDocumentKind;
+  shipment: ShipmentRecord;
+}) {
+  const response = await fetch(`/api/shipments/${encodeURIComponent(shipment.id)}/documents/${kind}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ shipment }),
+  });
+
+  if (!response.ok) {
+    const payload = await readJson<unknown>(response);
+    throw new Error(payload.error ?? "Failed to generate document.");
+  }
+
+  const blob = await response.blob();
+  const fileName = fileNameFromDisposition(
+    response.headers.get("Content-Disposition"),
+    kind === "booking-template" ? `${shipment.batchNo}-托书.docx` : `${shipment.batchNo}-补料-含vgm.xlsx`,
+  );
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+
+  return { fileName };
+}
+
 export async function loadShipmentsFromApi(): Promise<ApiLoadResult<ShipmentRecord[]>> {
   const response = await fetch("/api/shipments", { cache: "no-store" });
   const payload = await readJson<ShipmentRecord[]>(response);
@@ -117,6 +205,140 @@ export async function loadContactsFromApi(): Promise<ApiLoadResult<ContactRecord
     data: payload.data,
     source: payload.source ?? "database",
     warning: payload.warning,
+  };
+}
+
+export async function loadBookingPlansFromApi(): Promise<ApiLoadResult<BookingPlanRecord[]>> {
+  const response = await fetch("/api/booking-plans", { cache: "no-store" });
+  const payload = await readJson<BookingPlanRecord[]>(response);
+
+  if (!response.ok || !payload.data) {
+    throw new Error(payload.error ?? "Failed to load booking plans.");
+  }
+
+  return {
+    data: payload.data,
+    source: payload.source ?? "database",
+    warning: payload.warning,
+  };
+}
+
+export async function batchGenerateBookingDrafts(shipmentIds: string[]) {
+  const response = await fetch("/api/booking-plans/batch-drafts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ shipmentIds }),
+  });
+  const payload = await readJson<BookingDraftBatchResult & { batchId?: string }>(response);
+
+  if (!response.ok || !payload.data) {
+    throw new Error(payload.error ?? "Failed to generate booking drafts.");
+  }
+
+  return {
+    data: payload.data,
+    source: payload.source ?? "database",
+  };
+}
+
+export async function loadEmailDraftFromApi(draftId: string) {
+  const response = await fetch(`/api/email-drafts/${encodeURIComponent(draftId)}`, { cache: "no-store" });
+  const payload = await readJson<EmailDraftRecord>(response);
+
+  if (!response.ok || !payload.data) {
+    throw new Error(payload.error ?? "Failed to load email draft.");
+  }
+
+  return {
+    data: payload.data,
+    source: payload.source ?? "database",
+  };
+}
+
+export async function updateEmailDraftFromApi(draftId: string, draft: Partial<BookingDraft>) {
+  const response = await fetch(`/api/email-drafts/${encodeURIComponent(draftId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(draft),
+  });
+  const payload = await readJson<EmailDraftRecord>(response);
+
+  if (!response.ok || !payload.data) {
+    throw new Error(payload.error ?? "Failed to update email draft.");
+  }
+
+  return {
+    data: payload.data,
+    source: payload.source ?? "database",
+  };
+}
+
+export async function sendEmailDraftFromApi(draftId: string) {
+  const response = await fetch(`/api/email-drafts/${encodeURIComponent(draftId)}/send`, { method: "POST" });
+  const payload = await readJson<unknown>(response);
+
+  if (!response.ok || !payload.data) {
+    throw new Error(payload.error ?? "Failed to send email draft.");
+  }
+
+  return {
+    data: payload.data,
+    source: payload.source ?? "database",
+  };
+}
+
+export async function loadEmailRecognitionsFromApi(): Promise<ApiLoadResult<EmailRecognitionQueueItem[]>> {
+  const response = await fetch("/api/email-recognitions", { cache: "no-store" });
+  const payload = await readJson<EmailRecognitionQueueItem[]>(response);
+
+  if (!response.ok || !payload.data) {
+    throw new Error(payload.error ?? "Failed to load email recognitions.");
+  }
+
+  return {
+    data: payload.data,
+    source: payload.source ?? "database",
+    warning: payload.warning,
+  };
+}
+
+export async function runEmailSyncFromApi() {
+  const response = await fetch("/api/email-sync/run", { method: "POST" });
+  const payload = await readJson<EmailRecognitionSyncResult>(response);
+
+  if (!response.ok || !payload.data) {
+    throw new Error(payload.error ?? "Failed to sync email recognitions.");
+  }
+
+  return {
+    data: payload.data,
+    source: payload.source ?? "database",
+  };
+}
+
+export async function reviewEmailRecognitionFromApi({
+  action,
+  id,
+  reviewer = "操作员",
+}: {
+  action: EmailRecognitionReviewAction;
+  id: string;
+  reviewer?: string;
+}) {
+  const response = await fetch(`/api/email-recognitions/${encodeURIComponent(id)}/review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, reviewer }),
+  });
+  const payload = await readJson<EmailRecognitionReviewResult>(response);
+
+  if (!response.ok || !payload.data) {
+    throw new Error(payload.error ?? "Failed to review email recognition.");
+  }
+
+  return {
+    data: payload.data,
+    source: payload.source ?? "database",
   };
 }
 

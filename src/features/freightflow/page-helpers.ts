@@ -1,4 +1,4 @@
-import type { AlertLevel, ShipmentRecord } from "@/lib/mock-data";
+import type { AlertLevel, ShipmentRecord, ShipmentStatus } from "@/lib/mock-data";
 
 export const quickPrompts = [
   "催当前队列里超4小时未放舱的柜子",
@@ -42,6 +42,93 @@ export type DetailActionLabel =
   | "异常标记";
 
 export type SurfaceTone = "danger" | "info" | "neutral" | "success" | "warning";
+
+export type ShipmentBrief = {
+  primaryLine: string;
+  route: string;
+  summaryItems: Array<{ label: string; value: string }>;
+  timing: string;
+};
+
+export type ShipmentDetailGroup = {
+  items: Array<{ label: string; value: string }>;
+  title: string;
+};
+
+export type BookingTrackingCard = {
+  batchNo: string;
+  blTelexStatus: { className: string; label: string };
+  bookingAgent: string;
+  consignee: string;
+  containerNo: string;
+  containerType: string;
+  customsBroker: string;
+  cutoffPills: Array<{ label: string; value: string }>;
+  eta: string;
+  etd: string;
+  oceanFreightPrice: string;
+  packageWeightVolume: string;
+  queryUrl: string;
+  remark: string;
+  routeSummary: string;
+  shipper: string;
+  soNo: string;
+  status: string;
+  notifyParty: string;
+  truckingCompany: string;
+  vesselVoyage: string;
+};
+
+export type BookingPlanCreateCheck = {
+  canCreate: boolean;
+  message: string;
+};
+
+export type BookingFormDraft = {
+  bookingAgent: string;
+  carrier: string;
+  containerType: string;
+  destinationPort: string;
+  etd: string;
+  originPort: string;
+  pickupLocation: string;
+  remarks: string;
+  returnLocation: string;
+  vesselVoyage: string;
+};
+
+export type BookingPlanAttachmentPreview = {
+  fileName: string;
+  html: string;
+  lines: string[];
+};
+
+export type ShipmentStatusEditDraft = {
+  blTelexStatus: NonNullable<ShipmentRecord["blTelexStatus"]>;
+  cbm: string;
+  carrier: string;
+  containerNo: string;
+  customsBroker: string;
+  cutCustomsTime: string;
+  cutoffTime: string;
+  cutWeightTime: string;
+  documentStatus: ShipmentRecord["documentStatus"];
+  eta: string;
+  etd: string;
+  followUpCount: string;
+  grossWeight: string;
+  mailStatus: ShipmentRecord["mailStatus"];
+  nextAction: string;
+  oceanFreightPrice: string;
+  operator: string;
+  packages: string;
+  soNo: string;
+  soStatus: ShipmentRecord["soStatus"];
+  status: ShipmentStatus;
+  truckingCompany: string;
+  vesselName: string;
+  voyageNo: string;
+};
 
 export const contactRoleLabel: Record<ContactRole, string> = {
   booking_agent: "订舱代理",
@@ -101,6 +188,328 @@ export function pickRecommendedAction(shipment: ShipmentRecord): DetailActionLab
   return "AMS/ACI/ISF";
 }
 
+export function buildShipmentBrief(shipment: ShipmentRecord): ShipmentBrief {
+  const route = `${shipment.originPort} → ${shipment.destinationPort}`;
+  const soDisplay = shipment.soStatus === "已识别" && shipment.soNo.trim() ? shipment.soNo : "待代理回传";
+
+  return {
+    primaryLine: `批次 ${shipment.batchNo} · SO ${soDisplay} · 柜号 ${shipment.containerNo} · ${shipment.containerType}`,
+    route,
+    summaryItems: [
+      { label: "航线", value: route },
+      { label: "船名航次", value: shipment.vesselVoyage },
+      { label: "柜型", value: shipment.containerType },
+      { label: "责任人", value: `${shipment.operator} · ${shipment.bookingAgent}` },
+    ],
+    timing: `ETD ${shipment.etd} / ETA ${shipment.eta}`,
+  };
+}
+
+export function buildShipmentDetailGroups(shipment: ShipmentRecord): ShipmentDetailGroup[] {
+  return [
+    {
+      title: "基础信息",
+      items: [
+        { label: "批次号", value: shipment.batchNo },
+        { label: "SO", value: shipment.soNo },
+        { label: "柜号", value: shipment.containerNo },
+        { label: "状态", value: shipment.status },
+        { label: "订舱代理", value: shipment.bookingAgent },
+        { label: "操作员", value: shipment.operator },
+      ],
+    },
+    {
+      title: "航线与时效",
+      items: [
+        { label: "船公司", value: shipment.carrier },
+        { label: "起运港", value: shipment.originPort },
+        { label: "中转港", value: shipment.transitPort || "直达" },
+        { label: "目的港", value: shipment.destinationPort },
+        { label: "船名航次", value: shipment.vesselVoyage },
+        { label: "ETD", value: shipment.etd },
+        { label: "ETA", value: shipment.eta },
+        { label: "截补料", value: shipment.cutoffTime },
+      ],
+    },
+    {
+      title: "作业地点",
+      items: [
+        { label: "提柜地点", value: shipment.pickupLocation },
+        { label: "还柜地点", value: shipment.returnLocation },
+      ],
+    },
+    {
+      title: "单证与提醒",
+      items: [
+        { label: "邮件状态", value: shipment.mailStatus },
+        { label: "SO 状态", value: shipment.soStatus },
+        { label: "补料状态", value: shipment.documentStatus },
+        { label: "AMS", value: shipment.documentProgress.ams },
+        { label: "ACI", value: shipment.documentProgress.aci },
+        { label: "ISF", value: shipment.documentProgress.isf },
+        { label: "提醒", value: shipment.reminderFlags.join(" / ") || "无" },
+        { label: "异常", value: shipment.exceptions.join(" / ") || "无" },
+      ],
+    },
+  ];
+}
+
+function displayValue(value: unknown) {
+  if (value === null || value === undefined) return "-";
+
+  const normalized = String(value).trim();
+  return normalized.length > 0 ? normalized : "-";
+}
+
+function splitVesselVoyage(value: string) {
+  const normalized = value.trim();
+  if (!normalized) return { vesselName: "", voyageNo: "" };
+
+  const parts = normalized.split(/\s+/);
+  if (parts.length === 1) return { vesselName: normalized, voyageNo: "" };
+
+  return {
+    vesselName: parts.slice(0, -1).join(" "),
+    voyageNo: parts[parts.length - 1] ?? "",
+  };
+}
+
+function blTelexStatusBadge(value: ShipmentRecord["blTelexStatus"]): BookingTrackingCard["blTelexStatus"] {
+  if (value === "已确认") {
+    return { className: "border-emerald-200 bg-emerald-50 text-emerald-700", label: "已确认" };
+  }
+
+  if (value === "待确认") {
+    return { className: "border-amber-200 bg-amber-50 text-amber-700", label: "待确认" };
+  }
+
+  return { className: "border-slate-200 bg-slate-50 text-slate-600", label: "未确认" };
+}
+
+function carrierTrackingUrl(carrier: string) {
+  const normalized = carrier.trim().toUpperCase();
+
+  if (normalized.includes("OOCL")) {
+    return "https://www.oocl.com/eng/ourservices/eservices/cargotracking/Pages/cargotracking.aspx";
+  }
+
+  if (normalized.includes("COSCO")) return "https://elines.coscoshipping.com/ebusiness/cargoTracking";
+  if (normalized.includes("MAERSK")) return "https://www.maersk.com/tracking";
+  if (normalized.includes("HAPAG")) return "https://www.hapag-lloyd.com/en/online-business/track/track-by-booking-solution.html";
+  if (normalized.includes("YML") || normalized.includes("YANG")) return "https://www.yangming.com/e-service/track_trace/track_trace_cargo_tracking.aspx";
+  if (normalized.includes("EMC") || normalized.includes("EVER")) return "https://ct.shipmentlink.com/servlet/TDB1_CargoTracking.do";
+
+  return "https://www.track-trace.com/container";
+}
+
+export function buildBookingTrackingCard(shipment: ShipmentRecord): BookingTrackingCard {
+  const fallbackVessel = splitVesselVoyage(shipment.vesselVoyage);
+  const vesselName = displayValue(shipment.vesselName?.trim() ? shipment.vesselName : fallbackVessel.vesselName);
+  const voyageNo = displayValue(shipment.voyageNo?.trim() ? shipment.voyageNo : fallbackVessel.voyageNo);
+  const soNo = shipment.soStatus === "待识别" && shipment.soNo.trim() ? "待代理回传" : displayValue(shipment.soNo);
+  const routeSummary = `${displayValue(shipment.originPort)} → ${displayValue(shipment.destinationPort)} · ${displayValue(shipment.containerType)} · ${displayValue(shipment.carrier)}`;
+
+  return {
+    batchNo: displayValue(shipment.batchNo),
+    blTelexStatus: blTelexStatusBadge(shipment.blTelexStatus),
+    bookingAgent: displayValue(shipment.bookingAgent),
+    consignee: "TULE TECHNOLOGY CO., LIMITED",
+    containerNo: displayValue(shipment.containerNo),
+    containerType: displayValue(shipment.containerType),
+    customsBroker: displayValue(shipment.customsBroker),
+    cutoffPills: [
+      { label: "截单", value: displayValue(shipment.cutoffTime) },
+      { label: "截重", value: displayValue(shipment.cutWeightTime) },
+      { label: "截关", value: displayValue(shipment.cutCustomsTime) },
+    ],
+    eta: displayValue(shipment.eta),
+    etd: displayValue(shipment.etd),
+    oceanFreightPrice: displayValue(shipment.oceanFreightPrice),
+    packageWeightVolume: [displayValue(shipment.packages), displayValue(shipment.grossWeight), displayValue(shipment.cbm)].join(" / "),
+    queryUrl: carrierTrackingUrl(shipment.carrier),
+    remark: displayValue(shipment.nextAction),
+    routeSummary,
+    shipper: "GUANGDONG WUYOU SUPPLY CHAIN CO.,LTD",
+    soNo,
+    status: displayValue(shipment.status),
+    notifyParty: "VALUEWAY GLOBAL LOGISTICS INC.",
+    truckingCompany: displayValue(shipment.truckingCompany),
+    vesselVoyage: `${vesselName} / ${voyageNo}`,
+  };
+}
+
+export function buildShipmentStatusEditDraft(shipment: ShipmentRecord): ShipmentStatusEditDraft {
+  const soNo = shipment.soStatus === "已识别" && shipment.soNo.trim() ? shipment.soNo : "待代理回传 SO";
+  const fallbackVessel = splitVesselVoyage(shipment.vesselVoyage);
+
+  return {
+    blTelexStatus: shipment.blTelexStatus ?? "未确认",
+    cbm: shipment.cbm ?? "",
+    carrier: shipment.carrier,
+    containerNo: shipment.containerNo,
+    customsBroker: shipment.customsBroker ?? "",
+    cutCustomsTime: shipment.cutCustomsTime ?? "",
+    cutoffTime: shipment.cutoffTime,
+    cutWeightTime: shipment.cutWeightTime ?? "",
+    documentStatus: shipment.documentStatus,
+    eta: shipment.eta,
+    etd: shipment.etd,
+    followUpCount: String(shipment.followUpCount),
+    grossWeight: shipment.grossWeight ?? "",
+    mailStatus: shipment.mailStatus,
+    nextAction: shipment.nextAction,
+    oceanFreightPrice: shipment.oceanFreightPrice ?? "",
+    operator: shipment.operator,
+    packages: shipment.packages ?? "",
+    soNo,
+    soStatus: shipment.soStatus,
+    status: shipment.status,
+    truckingCompany: shipment.truckingCompany ?? "",
+    vesselName: shipment.vesselName?.trim() ? shipment.vesselName : fallbackVessel.vesselName,
+    voyageNo: shipment.voyageNo?.trim() ? shipment.voyageNo : fallbackVessel.voyageNo,
+  };
+}
+
+export function applyShipmentStatusEditDraft(
+  shipment: ShipmentRecord,
+  draft: ShipmentStatusEditDraft,
+): ShipmentRecord {
+  const parsedFollowUpCount = Number.parseInt(draft.followUpCount, 10);
+  const nextSoNo = draft.soStatus === "已识别" ? draft.soNo.trim() : "";
+  const nextVesselName = draft.vesselName.trim();
+  const nextVoyageNo = draft.voyageNo.trim();
+  const nextVesselVoyage = [nextVesselName, nextVoyageNo].filter(Boolean).join(" ");
+
+  return {
+    ...shipment,
+    blTelexStatus: draft.blTelexStatus,
+    cbm: draft.cbm.trim(),
+    carrier: draft.carrier.trim(),
+    containerNo: draft.containerNo.trim(),
+    customsBroker: draft.customsBroker.trim(),
+    cutCustomsTime: draft.cutCustomsTime.trim(),
+    cutoffTime: draft.cutoffTime.trim(),
+    cutWeightTime: draft.cutWeightTime.trim(),
+    documentStatus: draft.documentStatus,
+    eta: draft.eta.trim(),
+    etd: draft.etd.trim(),
+    followUpCount: Number.isFinite(parsedFollowUpCount) && parsedFollowUpCount >= 0 ? parsedFollowUpCount : 0,
+    grossWeight: draft.grossWeight.trim(),
+    mailStatus: draft.mailStatus,
+    nextAction: draft.nextAction.trim(),
+    oceanFreightPrice: draft.oceanFreightPrice.trim(),
+    operator: draft.operator.trim(),
+    packages: draft.packages.trim(),
+    reminderFlags: Array.from(new Set(["人工修正状态明细", ...shipment.reminderFlags])),
+    soNo: nextSoNo,
+    soStatus: draft.soStatus,
+    status: draft.status,
+    truckingCompany: draft.truckingCompany.trim(),
+    vesselName: nextVesselName,
+    vesselVoyage: nextVesselVoyage,
+    voyageNo: nextVoyageNo,
+  };
+}
+
+export function canCreateBookingPlanFromShipment(shipment: ShipmentRecord): BookingPlanCreateCheck {
+  if (shipment.mailStatus === "已发送") {
+    return { canCreate: false, message: "订舱邮件已发送" };
+  }
+
+  const requiredFields: Array<{ label: string; value: string }> = [
+    { label: "订舱代理", value: shipment.bookingAgent },
+    { label: "船公司", value: shipment.carrier },
+    { label: "柜型", value: shipment.containerType },
+    { label: "起运港", value: shipment.originPort },
+    { label: "目的港", value: shipment.destinationPort },
+    { label: "预计 ETD", value: shipment.etd },
+  ];
+  const missingFields = requiredFields.filter((field) => field.value.trim().length === 0).map((field) => field.label);
+
+  if (missingFields.length > 0) {
+    return { canCreate: false, message: `资料缺失：${missingFields.join("、")}` };
+  }
+
+  return { canCreate: true, message: "可新建订舱计划并生成中文草稿" };
+}
+
+export function buildBookingFormDraft(shipment: ShipmentRecord): BookingFormDraft {
+  return {
+    bookingAgent: shipment.bookingAgent,
+    carrier: shipment.carrier,
+    containerType: shipment.containerType,
+    destinationPort: shipment.destinationPort,
+    etd: shipment.etd,
+    originPort: shipment.originPort,
+    pickupLocation: shipment.pickupLocation,
+    remarks: "请协助订舱并回传 SO / 放舱确认。",
+    returnLocation: shipment.returnLocation,
+    vesselVoyage: shipment.vesselVoyage,
+  };
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+export function buildBookingPlanAttachmentPreview(
+  shipment: ShipmentRecord,
+  form: BookingFormDraft,
+): BookingPlanAttachmentPreview {
+  const lines = [
+    `批次号：${shipment.batchNo}`,
+    `SO：${shipment.soNo}`,
+    `柜号：${shipment.containerNo}`,
+    `订舱代理：${form.bookingAgent}`,
+    `船公司：${form.carrier}`,
+    `柜型：${form.containerType}`,
+    `起运港：${form.originPort}`,
+    `目的港：${form.destinationPort}`,
+    `预计 ETD：${form.etd}`,
+    `船名航次：${form.vesselVoyage}`,
+    `提柜地点：${form.pickupLocation}`,
+    `还柜地点：${form.returnLocation}`,
+    `备注：${form.remarks}`,
+  ];
+
+  return {
+    fileName: `${shipment.batchNo}-托书.docx`,
+    html: [
+      "<!doctype html>",
+      '<html lang="zh-CN">',
+      "<head><meta charset=\"utf-8\"><title>订舱申请</title></head>",
+      "<body>",
+      "<h1>订舱申请</h1>",
+      "<dl>",
+      ...lines.map((line) => {
+        const [label, ...rest] = line.split("：");
+        return `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(rest.join("："))}</dd>`;
+      }),
+      "</dl>",
+      "</body>",
+      "</html>",
+    ].join("\n"),
+    lines,
+  };
+}
+
+export function buildPostBookingSendState(shipment: ShipmentRecord, sentAt: string): ShipmentRecord {
+  return {
+    ...shipment,
+    lastEmailTime: sentAt,
+    mailStatus: "已发送",
+    nextAction: "等待代理回传 SO 信息，IMAP 识别后人工确认写回。",
+    reminderFlags: Array.from(new Set(["等待 SO 回传", ...shipment.reminderFlags])),
+    soStatus: "待识别",
+    status: "等待放舱",
+  };
+}
+
 export function levelDot(level: AlertLevel) {
   if (level === "red") return "bg-red-500";
   if (level === "yellow") return "bg-amber-500";
@@ -134,7 +543,7 @@ export function buildBookingDraft(shipment: ShipmentRecord): BookingDraft {
     to: [formatFreightFlowEmail(shipment.bookingAgent)],
     cc: ["ops@freightflow.ai"],
     subject: `${shipment.batchNo} Booking Request | ${shipment.containerType} | ${shipment.originPort} - ${shipment.destinationPort}`,
-    attachmentName: `${shipment.batchNo}-shipping-instruction.pdf`,
+    attachmentName: `${shipment.batchNo}-托书.docx`,
     body: [
       `Dear ${shipment.bookingAgent},`,
       "",

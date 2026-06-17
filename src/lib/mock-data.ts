@@ -21,18 +21,31 @@ export type ShipmentStatus =
 
 export type AlertLevel = "red" | "yellow" | "green";
 
+export type BlTelexStatus = "未确认" | "待确认" | "已确认" | "";
+
 export type ShipmentRecord = {
   id: string;
   batchNo: string;
   soNo: string;
   containerNo: string;
   bookingAgent: string;
+  blTelexStatus?: BlTelexStatus;
+  cbm?: string;
   carrier: string;
   originPort: string;
   transitPort: string;
   destinationPort: string;
   containerType: string;
+  customsBroker?: string;
+  cutCustomsTime?: string;
+  cutWeightTime?: string;
+  grossWeight?: string;
+  oceanFreightPrice?: string;
+  packages?: string;
+  truckingCompany?: string;
+  vesselName?: string;
   vesselVoyage: string;
+  voyageNo?: string;
   etd: string;
   eta: string;
   cutoffTime: string;
@@ -97,12 +110,23 @@ export const shipments: ShipmentRecord[] = [
     soNo: "OOLU8791320",
     containerNo: "TEMU9088771",
     bookingAgent: "Seabay Logistics",
+    blTelexStatus: "待确认",
+    cbm: "68.5 CBM",
     carrier: "OOCL",
     originPort: "Yantian",
     transitPort: "Busan",
     destinationPort: "Vancouver",
     containerType: "40HQ",
+    customsBroker: "Yantian Customs Desk",
+    cutCustomsTime: "2026-06-11 16:00",
+    cutWeightTime: "2026-06-11 14:00",
+    grossWeight: "18,240 KG",
+    oceanFreightPrice: "USD 2,450",
+    packages: "860 CTNS",
+    truckingCompany: "Shenzhen Port Trucking",
+    vesselName: "OOCL Rauma",
     vesselVoyage: "OOCL Rauma 068E",
+    voyageNo: "068E",
     etd: "2026-06-12 23:00",
     eta: "2026-06-28 09:00",
     cutoffTime: "2026-06-11 18:00",
