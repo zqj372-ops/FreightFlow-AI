@@ -155,7 +155,7 @@ freightflow-ai/
 - `/api/email-recognitions/[id]/review` 邮件识别人工审核 API,支持确认写入、标记异常、忽略
 - `/api/ai/openclaw`(stub 模式 + 转发模式)
 - 一轮结构整理(workbench 页面下沉、BookingModal / AiCopilotPanel / detail panels 抽离、ActionTile 统一)
-- Vitest 最小测试基线(纯函数 + OpenClaw route stub/proxy/error 分支)
+- Vitest 测试基线(纯函数 + OpenClaw route stub/proxy/error 分支 + mock 服务/API 操作链路)
 
 ## 8. 已知限制
 
@@ -165,7 +165,7 @@ freightflow-ai/
 - **真实 IMAP 拉信已接入服务骨架**:`POST /api/email-sync/run` 会在配置可用 IMAP 时使用 `ImapPullProvider`,否则使用 `MockEmailPullProvider` 兜底。真实 IMAP 传输失败会返回 5xx,不会静默降级为 mock。后续还需把 M3 分类与附件解析接成生产链路。
 - **附件流仍是 MVP 形态**:托书 DOCX 与补料 XLSX 已可由服务层生成下载,但还没有真实附件上传、文件存储、OCR 原文定位和模板后台维护。
 - **没有登录、权限、用户体系**。
-- **测试仍不完整**:已有 Vitest 最小单测基线,但没有覆盖率阈值和 E2E。
+- **测试仍不完整**:已有 Vitest 单测与 mock 服务/API 操作链路验收,但没有覆盖率阈值和浏览器 Playwright E2E。
 - **`src/features/freightflow/workbench-page.tsx` 仍较大**,后续可继续拆分看板状态、订舱状态 hook 或动作流 reducer。
 - **Prisma 7 使用 Postgres adapter 初始化**:`src/lib/prisma.ts` 通过 `@prisma/adapter-pg` + `pg` 创建 `PrismaClient`,构建期不会再因缺少 adapter 阻塞;真实数据库不可用时,相关 API 仍需各自 fallback。
 - **开源参考仅做架构借鉴**:已查看 `loadpartner/tms`、`fleetbase/fleetbase`、`AgileShift/cargo_management`、`MustafaYamin/logistics-crm-nextjs` 等项目。因许可证为 AGPL、Other 或未声明许可证,当前没有直接复制外部代码,只参考模块边界和工作流组织方式。

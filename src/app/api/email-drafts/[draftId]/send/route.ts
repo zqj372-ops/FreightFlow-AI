@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { isDatabaseConfigured } from "@/lib/prisma";
 import { sendEmailDraft } from "@/lib/services/booking-plans/booking-plan-service";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +19,7 @@ export async function POST(_request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "Email draft not found." }, { status: 404 });
     }
 
-    return NextResponse.json({ data: result, source: "database" });
+    return NextResponse.json({ data: result, source: isDatabaseConfigured() ? "database" : "mock" });
   } catch (error) {
     console.error(`POST /api/email-drafts/${draftId}/send failed`, error);
     return NextResponse.json(

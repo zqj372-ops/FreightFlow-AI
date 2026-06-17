@@ -998,3 +998,30 @@ e466fcf feat: defer SO entry until release recognition
   - `npm test` 通过,17 个测试文件 / 108 个用例。
   - `npm run build` 通过。
   - 本地 dev server `http://127.0.0.1:3000` 启动成功;首页 200,`/api/shipments`、`/api/contacts`、`/api/email-recognitions` 均以 mock source 返回正常数据。
+
+# 2026-06-18 · 完整操作链路补验收与 mock 写回修复
+
+- 背景:前一轮只验证了构建、单测和若干只读 API;完整操作时发现订舱草稿、邮件同步、识别复核仍有断点。
+- 修复订舱草稿链路:
+  - `createBookingDraftBatchWithFallback` 在无 `DATABASE_URL` 时改为写入 mock repository,返回真实可读取的 `draftId` / `plan.lastDraftId`。
+  - `GET/PATCH /api/email-drafts/[draftId]` 与 `POST /api/email-drafts/[draftId]/send` 支持 mock repository 读取、更新、发送和 Shipment 状态写回。
+  - mock 发送后会标记 draft 为 `sent`,booking plan 为 `sent`,Shipment 更新为 `mailStatus=已发送`、`status=等待放舱`。
+- 修复邮件同步与识别复核链路:
+  - `POST /api/email-sync/run` 改为返回前端期望的 `{ data, source }` envelope。
+  - `GET /api/email-recognitions` 改为走同一 service fallback,不再返回 stateless fixture id。
+  - `confirm / mark_exception / ignore` 在 mock repository 中可持久写回,确认 SO 后更新 Shipment `soStatus=已识别`、符合条件时 `status=已放舱`。
+- 新增验收测试:
+  - `src/lib/services/freightflow-workflow-e2e.test.ts` 覆盖“批量生成草稿 → 读取草稿 → 发送草稿 → Shipment 写回”。
+  - 同一测试覆盖“邮件同步 → 待复核队列 → 确认 SO → Shipment 写回”。
+  - `src/app/api/shipments/route.test.ts` 增加 `POST /api/email-sync/run` envelope 兼容测试。
+- 手工 API 验收:
+  - 重启 dev server 后,从干净 mock store 依次调用 `/api/booking-plans`, `/api/booking-plans/batch-drafts`, `/api/email-drafts/:id`, `/api/email-drafts/:id/send`, `/api/shipments/:id`, `/api/email-sync/run`, `/api/email-recognitions`, `/api/email-recognitions/:id/review`。
+  - 结果:订舱草稿可生成、读取、发送并写回运单;SO 识别可确认并写回运单;复核后队列移除对应待处理项。
+- 验证结果:
+  - `npm run lint` 通过。
+  - `npm run prisma:validate` 通过。
+  - `npm test` 通过,18 个测试文件 / 111 个用例。
+  - `npm run build` 通过。
+- 仍需说明:
+  - 当前完整链路是在 mock repository / 本地演示模式下可完整操作。
+  - 生产可用仍需要接入并 seed PostgreSQL、配置真实 SMTP/IMAP、补真实附件上传/OCR/文件存储、补浏览器 Playwright E2E。

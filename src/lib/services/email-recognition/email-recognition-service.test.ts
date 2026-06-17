@@ -22,6 +22,7 @@ import {
 } from "./email-recognition-service";
 
 vi.mock("@/lib/prisma", () => ({
+  isDatabaseConfigured: vi.fn(() => true),
   prisma: {
     $transaction: vi.fn(),
   },

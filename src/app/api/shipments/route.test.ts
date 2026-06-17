@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GET as listShipments } from "@/app/api/shipments/route";
 import { GET as getShipment } from "@/app/api/shipments/[id]/route";
 import { GET as listRecognitions } from "@/app/api/email-recognitions/route";
+import { POST as runEmailSync } from "@/app/api/email-sync/run/route";
 
 vi.mock("@/lib/services/email-recognition/email-recognition-service", async () => {
   const actual = await vi.importActual<typeof import("@/lib/services/email-recognition/email-recognition-service")>(
@@ -82,5 +83,19 @@ describe("shipments + email-recognitions API routes (mock data layer)", () => {
     expect(body.source).toBe("mock");
     expect(body.data.length).toBeGreaterThan(0);
     expect(body.data.every((item) => item.status === "pending_review")).toBe(true);
+  });
+
+  it("POST /api/email-sync/run returns the recognition sync envelope expected by the client", async () => {
+    const response = await runEmailSync(new Request("http://localhost/api/email-sync/run", { method: "POST" }));
+
+    expect(response.status).toBe(200);
+    const body = await makeJsonRequest<{
+      data: { duplicateCount: number; importedCount: number; recognitions: Array<{ id: string }> };
+      source: string;
+    }>(response);
+    expect(body.source).toBe("mock");
+    expect(typeof body.data.duplicateCount).toBe("number");
+    expect(typeof body.data.importedCount).toBe("number");
+    expect(Array.isArray(body.data.recognitions)).toBe(true);
   });
 });

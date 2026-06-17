@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { isDatabaseConfigured } from "@/lib/prisma";
 import {
   confirmEmailRecognition,
   ignoreEmailRecognition,
@@ -33,7 +34,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           ? await ignoreEmailRecognition(id, input)
           : await markEmailRecognitionException(id, input);
 
-    return NextResponse.json({ data, source: "database" });
+    return NextResponse.json({ data, source: isDatabaseConfigured() ? "database" : "mock" });
   } catch (error) {
     console.error("POST /api/email-recognitions/[id]/review failed", error);
     return NextResponse.json(

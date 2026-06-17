@@ -16,9 +16,10 @@ import {
   type EmailRecognitionType,
   type RawEmailMessage,
 } from "@/features/freightflow/email-recognition-rules";
-import { isPrismaUnavailable, listShipmentsFromDatabase, mockShipments } from "@/lib/freightflow-data";
+import { formatDateForUi, isPrismaUnavailable, listShipmentsFromDatabase, mockShipments } from "@/lib/freightflow-data";
 import type { ShipmentRecord } from "@/lib/mock-data";
-import { prisma } from "@/lib/prisma";
+import { isDatabaseConfigured, prisma } from "@/lib/prisma";
+import { getRepositories, type RecognitionWithEmail } from "@/lib/repositories";
 
 export type EmailRecognitionQueueItem = {
   bodyPreview: string;
@@ -181,6 +182,24 @@ function mapRecognitionRecord(record: {
   };
 }
 
+function mapRepositoryRecognition(record: RecognitionWithEmail): EmailRecognitionQueueItem {
+  return {
+    bodyPreview: record.emailMessage.bodyText.slice(0, 180),
+    confidence: record.confidence,
+    emailMessageId: record.emailMessageId,
+    from: record.emailMessage.from,
+    id: record.id,
+    matchedShipmentId: record.matchedShipmentId,
+    messageId: record.emailMessage.messageId,
+    receivedAt: record.emailMessage.receivedAt,
+    recognitionType: record.recognitionType,
+    riskFlags: [...record.riskFlags],
+    status: record.status,
+    subject: record.emailMessage.subject,
+    summary: record.summary,
+  };
+}
+
 export async function listEmailRecognitionQueue() {
   const records = await prisma.emailRecognitionResult.findMany({
     include: { emailMessage: true },
@@ -192,15 +211,25 @@ export async function listEmailRecognitionQueue() {
 }
 
 export async function listEmailRecognitionQueueWithFallback() {
+  if (!isDatabaseConfigured()) {
+    return { data: await listMockEmailRecognitionQueueFromStore(), source: "mock" as const };
+  }
+
   try {
     return { data: await listEmailRecognitionQueue(), source: "database" as const };
   } catch (error) {
     if (isPrismaUnavailable(error)) {
-      return { data: listMockEmailRecognitionQueue(), source: "mock" as const };
+      return { data: await listMockEmailRecognitionQueueFromStore(), source: "mock" as const };
     }
 
     throw error;
   }
+}
+
+async function listMockEmailRecognitionQueueFromStore() {
+  const repositories = await getRepositories();
+  const records = await repositories.emailRecognitions.listPending();
+  return records.map(mapRepositoryRecognition);
 }
 
 export async function runEmailRecognitionSync(messages: RawEmailMessage[] = mockMessages) {
@@ -259,18 +288,79 @@ export async function runEmailRecognitionSync(messages: RawEmailMessage[] = mock
 }
 
 export async function runEmailRecognitionSyncWithFallback() {
+  if (!isDatabaseConfigured()) {
+    return { data: await runMockEmailRecognitionSync(), source: "mock" as const };
+  }
+
   try {
     return { data: await runEmailRecognitionSync(), source: "database" as const };
   } catch (error) {
     if (isPrismaUnavailable(error)) {
-      return { data: buildMockEmailRecognitionSync(), source: "mock" as const };
+      return { data: await runMockEmailRecognitionSync(), source: "mock" as const };
     }
 
     throw error;
   }
 }
 
+async function runMockEmailRecognitionSync(messages: RawEmailMessage[] = mockMessages) {
+  const repositories = await getRepositories();
+  const shipments = await repositories.shipments.list();
+  let duplicateCount = 0;
+  const recognitions: EmailRecognitionQueueItem[] = [];
+
+  for (const message of messages) {
+    const existing = await repositories.emailMessages.getByMessageId(message.messageId);
+    if (existing) {
+      duplicateCount += 1;
+      continue;
+    }
+
+    const recognition = classifyEmailMessage(message);
+    const matchedShipment = matchShipmentForEmail(message, shipments);
+    const receivedAt = message.receivedAt ?? new Date().toISOString();
+    const emailMessage = await repositories.emailMessages.create({
+      attachments: [],
+      bodySummary: recognition.summary,
+      bodyText: message.bodyText,
+      cc: [],
+      from: message.from,
+      mailbox: "INBOX",
+      messageId: message.messageId,
+      receivedAt,
+      subject: message.subject,
+      syncStatus: "queued",
+      threadId: null,
+      to: [],
+    });
+    const record = await repositories.emailRecognitions.create({
+      confidence: recognition.confidence,
+      emailMessageId: emailMessage.id,
+      extractedFields: recognition.extractedFields,
+      matchedShipmentId: matchedShipment?.id ?? null,
+      recognitionType: recognition.recognitionType,
+      riskFlags: recognition.riskFlags,
+      status: "pending_review",
+      summary: recognition.summary,
+    });
+    const withEmail = await repositories.emailRecognitions.getById(record.id);
+    if (withEmail) {
+      recognitions.push(mapRepositoryRecognition(withEmail));
+    }
+  }
+
+  return {
+    duplicateCount,
+    importedCount: recognitions.length,
+    recognitions,
+  } satisfies EmailRecognitionSyncResult;
+}
+
 export async function confirmEmailRecognition(id: string, input: EmailRecognitionReviewInput = {}) {
+  if (!isDatabaseConfigured()) {
+    return confirmMockEmailRecognition(id, input);
+  }
+
   return prisma.$transaction(async (tx) => {
     const recognition = await tx.emailRecognitionResult.findUnique({
       include: { emailMessage: true },
@@ -331,6 +421,10 @@ export async function confirmEmailRecognition(id: string, input: EmailRecognitio
 }
 
 export async function markEmailRecognitionException(id: string, input: EmailRecognitionReviewInput = {}) {
+  if (!isDatabaseConfigured()) {
+    return markMockEmailRecognitionException(id, input);
+  }
+
   return prisma.$transaction(async (tx) => {
     const recognition = await tx.emailRecognitionResult.findUnique({
       include: { emailMessage: true },
@@ -393,6 +487,10 @@ export async function markEmailRecognitionException(id: string, input: EmailReco
 }
 
 export async function ignoreEmailRecognition(id: string, input: EmailRecognitionReviewInput = {}) {
+  if (!isDatabaseConfigured()) {
+    return ignoreMockEmailRecognition(id, input);
+  }
+
   return prisma.$transaction(async (tx) => {
     const recognition = await tx.emailRecognitionResult.findUnique({ where: { id } });
 
@@ -423,8 +521,181 @@ export async function ignoreEmailRecognition(id: string, input: EmailRecognition
   });
 }
 
+async function confirmMockEmailRecognition(id: string, input: EmailRecognitionReviewInput) {
+  const repositories = await getRepositories();
+  const recognition = await repositories.emailRecognitions.getById(id);
+
+  if (!recognition) {
+    throw new Error("Recognition not found.");
+  }
+
+  if (!recognition.matchedShipmentId) {
+    throw new Error("Recognition is not matched to a shipment.");
+  }
+
+  const shipment = await repositories.shipments.getById(recognition.matchedShipmentId);
+  if (!shipment) {
+    throw new Error("Matched shipment not found.");
+  }
+
+  const writeback = buildMockRecognitionWriteback(recognition, shipment);
+  const now = new Date().toISOString();
+
+  await repositories.shipments.advanceStatus({
+    patch: writeback.shipmentPatch,
+    shipmentId: recognition.matchedShipmentId,
+  });
+  await repositories.emailRecognitions.updateStatus({
+    id,
+    reviewedAt: now,
+    reviewedBy: normalizeReviewer(input.reviewer),
+    status: "confirmed",
+  });
+  await repositories.emailMessages.updateSyncStatus({
+    id: recognition.emailMessageId,
+    syncStatus: "confirmed",
+  });
+  await repositories.shipments.recordActionLog({
+    actionType: writeback.actionType,
+    actorName: normalizeReviewer(input.reviewer),
+    shipmentId: recognition.matchedShipmentId,
+    source: "UI",
+    summary: writeback.summary,
+  });
+
+  return {
+    recognitionId: id,
+    shipmentId: recognition.matchedShipmentId,
+    status: "confirmed",
+    summary: writeback.summary,
+  } satisfies EmailRecognitionReviewResult;
+}
+
+async function markMockEmailRecognitionException(id: string, input: EmailRecognitionReviewInput) {
+  const repositories = await getRepositories();
+  const recognition = await repositories.emailRecognitions.getById(id);
+
+  if (!recognition) {
+    throw new Error("Recognition not found.");
+  }
+
+  if (!recognition.matchedShipmentId) {
+    throw new Error("Recognition is not matched to a shipment.");
+  }
+
+  const shipment = await repositories.shipments.getById(recognition.matchedShipmentId);
+  const summary = `邮件识别异常：${recognition.summary}`;
+  const now = new Date().toISOString();
+
+  await repositories.shipments.advanceStatus({
+    patch: {
+      exceptions: Array.from(new Set([...(shipment?.exceptions ?? []), summary])),
+      status: "异常处理中",
+    },
+    shipmentId: recognition.matchedShipmentId,
+  });
+  await repositories.emailRecognitions.updateStatus({
+    id,
+    reviewedAt: now,
+    reviewedBy: normalizeReviewer(input.reviewer),
+    status: "confirmed",
+  });
+  await repositories.emailMessages.updateSyncStatus({
+    id: recognition.emailMessageId,
+    syncStatus: "confirmed",
+  });
+  await repositories.shipments.recordActionLog({
+    actionType: "异常标记",
+    actorName: normalizeReviewer(input.reviewer),
+    shipmentId: recognition.matchedShipmentId,
+    source: "UI",
+    summary,
+  });
+
+  return {
+    recognitionId: id,
+    shipmentId: recognition.matchedShipmentId,
+    status: "confirmed",
+    summary,
+  } satisfies EmailRecognitionReviewResult;
+}
+
+async function ignoreMockEmailRecognition(id: string, input: EmailRecognitionReviewInput) {
+  const repositories = await getRepositories();
+  const recognition = await repositories.emailRecognitions.getById(id);
+
+  if (!recognition) {
+    throw new Error("Recognition not found.");
+  }
+
+  const now = new Date().toISOString();
+  await repositories.emailRecognitions.updateStatus({
+    id,
+    reviewedAt: now,
+    reviewedBy: normalizeReviewer(input.reviewer),
+    status: "ignored",
+  });
+  await repositories.emailMessages.updateSyncStatus({
+    id: recognition.emailMessageId,
+    syncStatus: "ignored",
+  });
+
+  return {
+    recognitionId: id,
+    shipmentId: recognition.matchedShipmentId,
+    status: "ignored",
+    summary: "邮件识别已忽略，未写回 Shipment。",
+  } satisfies EmailRecognitionReviewResult;
+}
+
 function normalizeReviewer(reviewer: string | undefined) {
   return reviewer?.trim() || "操作员";
+}
+
+function buildMockRecognitionWriteback(recognition: RecognitionWithEmail, shipment: ShipmentRecord) {
+  switch (recognition.recognitionType) {
+    case "SO_RECEIVED":
+      return {
+        actionType: "SO 识别" as const,
+        shipmentPatch: {
+          soStatus: "已识别" as const,
+          status: shipment.status === "等待放舱" || shipment.status === "已催放舱" ? "已放舱" as const : shipment.status,
+        },
+        summary: "SO 回传已人工确认并写回 Shipment。仍保留人工审核记录。",
+      };
+    case "SUPPLEMENT_CONFIRMED":
+      return {
+        actionType: "补料文件" as const,
+        shipmentPatch: {
+          documentStatus: "已确认" as const,
+          status:
+            shipment.status === "已发送补料" || shipment.status === "等待补料确认"
+              ? "补料已确认" as const
+              : shipment.status,
+        },
+        summary: "补料确认邮件已人工确认并写回 Shipment。",
+      };
+    case "BOOKING_REPLY":
+    case "FOLLOW_UP_REPLY":
+      return {
+        actionType: "催单提醒" as const,
+        shipmentPatch: {
+          lastEmailTime: formatDateForUi(new Date()),
+        },
+        summary: "订舱/催单回复已人工确认并记录到 Shipment。",
+      };
+    case "EXCEPTION":
+      return {
+        actionType: "异常标记" as const,
+        shipmentPatch: {
+          exceptions: Array.from(new Set([...shipment.exceptions, `邮件识别异常：${recognition.summary}`])),
+          status: "异常处理中" as const,
+        },
+        summary: "异常邮件已人工确认并写回 Shipment。",
+      };
+    case "UNKNOWN":
+      throw new Error("Unknown recognition cannot be confirmed. Ignore or mark it as exception instead.");
+  }
 }
 
 function buildRecognitionWriteback(type: DbEmailRecognitionType, currentStatus: ShipmentStatus) {

@@ -15,10 +15,13 @@ import {
   type BookingPlanStatus,
 } from "@/features/freightflow/booking-plan-rules";
 import type { BookingDraft } from "@/features/freightflow/page-helpers";
-import { isPrismaUnavailable, listShipmentsFromDatabase, mockShipments } from "@/lib/freightflow-data";
+import { formatDateForUi, isPrismaUnavailable, listShipmentsFromDatabase, mockShipments } from "@/lib/freightflow-data";
 import type { ShipmentRecord } from "@/lib/mock-data";
-import { prisma } from "@/lib/prisma";
+import { getRepositories } from "@/lib/repositories";
+import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import { parseShipmentEmailInput, sendShipmentEmail } from "@/lib/services/email/email-service";
+import { createEmailProvider } from "@/lib/services/email/mock-provider";
+import type { SendShipmentEmailResult } from "@/lib/services/email/types";
 
 const planStatusToDb = {
   draft_ready: DbBookingPlanStatus.DRAFT_READY,
@@ -54,6 +57,19 @@ export function createMockBookingDraftBatch(
   records: ShipmentRecord[] = mockShipments,
 ): BookingDraftBatchResult {
   return buildBookingDraftBatchResult(selectedShipmentIds, records);
+}
+
+async function listMockBookingPlansFromStore() {
+  const repositories = await getRepositories();
+  const [shipments, storedPlans] = await Promise.all([
+    repositories.shipments.list(),
+    repositories.bookingPlans.list(),
+  ]);
+  const storedByShipment = new Map(storedPlans.map((plan) => [plan.shipmentId, plan]));
+
+  return buildBookingPlanRecords(shipments)
+    .map((plan) => storedByShipment.get(plan.shipmentId) ?? plan)
+    .filter((plan) => plan.planStatus !== "sent");
 }
 
 async function upsertBookingPlanForShipment(shipment: ShipmentRecord) {
@@ -94,11 +110,15 @@ export async function listBookingPlans() {
 }
 
 export async function listBookingPlansWithFallback() {
+  if (!isDatabaseConfigured()) {
+    return { data: await listMockBookingPlansFromStore(), source: "mock" as const };
+  }
+
   try {
     return { data: await listBookingPlans(), source: "database" as const };
   } catch (error) {
     if (isPrismaUnavailable(error)) {
-      return { data: listMockBookingPlans(), source: "mock" as const };
+      return { data: await listMockBookingPlansFromStore(), source: "mock" as const };
     }
 
     throw error;
@@ -219,12 +239,72 @@ export async function createBookingDraftBatch(selectedShipmentIds: string[], cre
   });
 }
 
+async function createMockBookingDraftBatchWithStore(selectedShipmentIds: string[], createdBy?: string) {
+  const repositories = await getRepositories();
+  const shipments = await repositories.shipments.list();
+  const batchPreview = buildBookingDraftBatchResult(selectedShipmentIds, shipments);
+  const batchId = `mock-batch-${Date.now()}`;
+  const items = [];
+
+  for (const item of batchPreview.items) {
+    if (item.status !== "success" || !item.draft) {
+      items.push(item);
+      continue;
+    }
+
+    const plan = await repositories.bookingPlans.upsertForShipment({
+      batchNo: item.plan.batchNo,
+      bookingAgent: item.plan.bookingAgent,
+      containerType: item.plan.containerType,
+      destinationPort: item.plan.destinationPort,
+      id: item.plan.id,
+      lastError: null,
+      originPort: item.plan.originPort,
+      planStatus: "draft_ready",
+      preferredBookingAgent: item.plan.bookingAgent || null,
+      shipmentId: item.plan.shipmentId,
+      snapshot: {
+        missingFields: item.plan.missingFields,
+        riskFlags: item.plan.riskFlags,
+      },
+    });
+
+    const draft = await repositories.drafts.create({
+      attachmentName: item.draft.attachmentName,
+      body: item.draft.body,
+      cc: item.draft.cc,
+      createdFromPlanId: plan.id,
+      draftType: "booking",
+      shipmentId: item.plan.shipmentId,
+      status: "pending_review",
+      subject: item.draft.subject,
+      to: item.draft.to,
+    });
+
+    await repositories.bookingPlans.bindLastDraft(plan.id, draft.id);
+
+    items.push({
+      ...item,
+      draft: { ...item.draft, id: draft.id, shipmentId: draft.shipmentId, status: "pending_review" },
+      plan: { ...item.plan, id: plan.id, lastDraftId: draft.id },
+    });
+  }
+
+  void createdBy;
+
+  return { ...batchPreview, batchId, items };
+}
+
 export async function createBookingDraftBatchWithFallback(selectedShipmentIds: string[], createdBy?: string) {
+  if (!isDatabaseConfigured()) {
+    return { data: await createMockBookingDraftBatchWithStore(selectedShipmentIds, createdBy), source: "mock" as const };
+  }
+
   try {
     return { data: await createBookingDraftBatch(selectedShipmentIds, createdBy), source: "database" as const };
   } catch (error) {
     if (isPrismaUnavailable(error)) {
-      return { data: createMockBookingDraftBatch(selectedShipmentIds), source: "mock" as const };
+      return { data: await createMockBookingDraftBatchWithStore(selectedShipmentIds, createdBy), source: "mock" as const };
     }
 
     throw error;
@@ -232,28 +312,56 @@ export async function createBookingDraftBatchWithFallback(selectedShipmentIds: s
 }
 
 export async function getEmailDraft(draftId: string) {
-  const draft = await prisma.emailDraft.findUnique({ where: { id: draftId } });
-  return draft ? mapDraftRecord(draft) : null;
+  if (!isDatabaseConfigured()) {
+    return (await (await getRepositories()).drafts.getById(draftId)) satisfies EmailDraftRecord | null;
+  }
+
+  try {
+    const draft = await prisma.emailDraft.findUnique({ where: { id: draftId } });
+    return draft ? mapDraftRecord(draft) : null;
+  } catch (error) {
+    if (isPrismaUnavailable(error)) {
+      return (await (await getRepositories()).drafts.getById(draftId)) satisfies EmailDraftRecord | null;
+    }
+
+    throw error;
+  }
 }
 
 export async function updateEmailDraft(draftId: string, draft: Partial<BookingDraft>) {
-  const updated = await prisma.emailDraft.update({
-    data: {
-      ...(draft.attachmentName !== undefined
-        ? { attachments: toInputJson(draft.attachmentName ? [draft.attachmentName] : []) }
-        : {}),
-      ...(draft.body !== undefined ? { body: draft.body } : {}),
-      ...(draft.cc !== undefined ? { cc: toInputJson(draft.cc) } : {}),
-      ...(draft.subject !== undefined ? { subject: draft.subject } : {}),
-      ...(draft.to !== undefined ? { to: toInputJson(draft.to) } : {}),
-    },
-    where: { id: draftId },
-  });
+  if (!isDatabaseConfigured()) {
+    return (await (await getRepositories()).drafts.update(draftId, draft)) satisfies EmailDraftRecord | null;
+  }
 
-  return mapDraftRecord(updated);
+  try {
+    const updated = await prisma.emailDraft.update({
+      data: {
+        ...(draft.attachmentName !== undefined
+          ? { attachments: toInputJson(draft.attachmentName ? [draft.attachmentName] : []) }
+          : {}),
+        ...(draft.body !== undefined ? { body: draft.body } : {}),
+        ...(draft.cc !== undefined ? { cc: toInputJson(draft.cc) } : {}),
+        ...(draft.subject !== undefined ? { subject: draft.subject } : {}),
+        ...(draft.to !== undefined ? { to: toInputJson(draft.to) } : {}),
+      },
+      where: { id: draftId },
+    });
+
+    return mapDraftRecord(updated);
+  } catch (error) {
+    if (isPrismaUnavailable(error)) {
+      return (await (await getRepositories()).drafts.update(draftId, draft)) satisfies EmailDraftRecord | null;
+    }
+
+    throw error;
+  }
 }
 
 export async function sendEmailDraft(draftId: string) {
+  if (!isDatabaseConfigured()) {
+    return sendMockEmailDraft(draftId);
+  }
+
   const draft = await prisma.emailDraft.findUnique({ where: { id: draftId } });
 
   if (!draft) return null;
@@ -292,4 +400,72 @@ export async function sendEmailDraft(draftId: string) {
   ]);
 
   return result;
+}
+
+async function sendMockEmailDraft(draftId: string): Promise<SendShipmentEmailResult | null> {
+  const repositories = await getRepositories();
+  const draft = await repositories.drafts.getById(draftId);
+
+  if (!draft) return null;
+
+  const input = parseShipmentEmailInput(draft.shipmentId, {
+    attachmentName: draft.attachmentName,
+    body: draft.body,
+    cc: draft.cc,
+    subject: draft.subject,
+    to: draft.to,
+  });
+  const provider = await createEmailProvider();
+  const providerMessage = await provider.send(input);
+  const emailLogId = `mock-email-log-${draft.id}`;
+  const emailLog = {
+    attachmentName: input.attachmentName ?? null,
+    body: input.body,
+    createdAt: providerMessage.sentAt,
+    id: emailLogId,
+    recipients: input.recipients.map((recipient, index) => ({
+      createdAt: providerMessage.sentAt,
+      email: recipient.email,
+      emailLogId,
+      id: `${emailLogId}-recipient-${index + 1}`,
+      recipientType: recipient.type,
+    })),
+    sentAt: providerMessage.sentAt,
+    shipmentId: input.shipmentId,
+    subject: input.subject,
+  };
+
+  await repositories.drafts.markSent({
+    draftId,
+    emailLogId,
+    lastError: null,
+  });
+
+  const plans = await repositories.bookingPlans.list();
+  const plan = plans.find((entry) => entry.lastDraftId === draftId);
+  if (plan) {
+    await repositories.bookingPlans.updateStatus({ id: plan.id, planStatus: "sent" });
+  }
+
+  await repositories.shipments.advanceStatus({
+    patch: {
+      lastEmailTime: formatDateForUi(providerMessage.sentAt),
+      mailStatus: "已发送",
+      status: "等待放舱",
+    },
+    shipmentId: draft.shipmentId,
+  });
+  await repositories.shipments.recordActionLog({
+    actionType: "订舱邮件",
+    actorName: "操作员",
+    shipmentId: draft.shipmentId,
+    source: "UI",
+    summary: "订舱草稿已发送并写回本地演示数据。",
+  });
+
+  return {
+    emailLog,
+    mode: provider.name === "mock-local" ? "mock" : "provider",
+    providerMessage,
+  };
 }

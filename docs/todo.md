@@ -168,9 +168,12 @@
 
 ### 4.3 E2E(P2)
 
-- Playwright 跑订舱流程主链路。
-- 验收:打开首页 → 选中柜子 → 打开 booking modal → 填收件人 → 发送。
-- 新增验收建议:依次打开 SO识别中心 / 补料中心 / AMS/ACI/ISF / 邮件中心 / 异常中心,确认每个模块都有数据面板、主操作按钮和错误提示。
+- 状态:已补服务/API 级 mock 操作验收,尚未补浏览器 Playwright。
+- 已覆盖:`createBookingDraftBatchWithFallback` → `getEmailDraft` → `sendEmailDraft` → Shipment 状态写回。
+- 已覆盖:`runEmailRecognitionSyncWithFallback` → `listEmailRecognitionQueueWithFallback` → `confirmEmailRecognition` → Shipment SO 状态写回。
+- 已覆盖:`POST /api/email-sync/run` 返回前端期望的 `{ data, source }` envelope。
+- 剩余:Playwright 打开首页 → 选中柜子 → 打开 booking modal → 填收件人 → 发送。
+- 剩余:Playwright 依次打开 SO识别中心 / 补料中心 / AMS/ACI/ISF / 邮件中心 / 异常中心,确认每个模块都有数据面板、主操作按钮和错误提示。
 
 ### 4.4 CI 质量门禁(P2)
 
