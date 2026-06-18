@@ -209,6 +209,7 @@ export function ShipmentDetailDrawer({
 }
 
 const shipmentStatusOptions: ShipmentStatus[] = [
+  "待订舱",
   "已发送订舱",
   "等待放舱",
   "已催放舱",

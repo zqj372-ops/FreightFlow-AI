@@ -181,7 +181,7 @@ export function cutoffTone(hours: number): SurfaceTone {
 
 export function pickRecommendedAction(shipment: ShipmentRecord): DetailActionLabel {
   if (shipment.status === "异常处理中") return "异常标记";
-  if (shipment.mailStatus === "未发送") return "订舱邮件";
+  if (shipment.status === "待订舱" && shipment.mailStatus === "未发送") return "订舱邮件";
   if (["待补料", "已发送补料", "等待补料确认"].includes(shipment.status)) return "补料文件";
   if (shipment.soStatus === "待识别") return "SO 识别";
   if (["等待放舱", "已发送订舱", "已催放舱"].includes(shipment.status)) return "催单提醒";
@@ -414,6 +414,10 @@ export function applyShipmentStatusEditDraft(
 export function canCreateBookingPlanFromShipment(shipment: ShipmentRecord): BookingPlanCreateCheck {
   if (shipment.mailStatus === "已发送") {
     return { canCreate: false, message: "订舱邮件已发送" };
+  }
+
+  if (shipment.mailStatus !== "未发送" || shipment.status !== "待订舱") {
+    return { canCreate: false, message: "当前柜子已进入订舱后续流程" };
   }
 
   const requiredFields: Array<{ label: string; value: string }> = [

@@ -53,13 +53,34 @@ const requiredShipmentFields: Array<{ key: keyof ShipmentRecord; label: string }
   { key: "etd", label: "预计 ETD" },
 ];
 
+const bookingAlreadyStartedStatuses = new Set<ShipmentRecord["status"]>([
+  "等待放舱",
+  "已催放舱",
+  "已放舱",
+  "待补料",
+  "已发送补料",
+  "等待补料确认",
+  "补料已确认",
+  "待报关",
+  "已报关",
+  "待提柜",
+  "已提柜",
+  "已装柜",
+  "已还柜",
+  "已开船",
+  "已到港",
+  "已签收",
+  "已完成",
+  "异常处理中",
+]);
+
 export function evaluateBookingPlanReadiness(
   shipment: ShipmentRecord,
 ): BookingPlanReadiness {
-  if (shipment.mailStatus === "已发送") {
+  if (shipment.mailStatus !== "未发送" || bookingAlreadyStartedStatuses.has(shipment.status)) {
     return {
       missingFields: [],
-      riskFlags: ["订舱邮件已发送"],
+      riskFlags: [shipment.mailStatus === "未发送" ? `当前状态为${shipment.status}` : "订舱邮件已发送"],
       status: "sent",
     };
   }

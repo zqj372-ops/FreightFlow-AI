@@ -17,6 +17,8 @@ import {
   pickRecommendedAction,
 } from "./page-helpers";
 
+const draftableShipment = shipments.find((shipment) => shipment.status === "待订舱") ?? shipments[0];
+
 describe("buildBookingDraft", () => {
   it("builds a booking email draft from shipment fields", () => {
     const draft = buildBookingDraft(shipments[0]);
@@ -94,7 +96,11 @@ describe("pickRecommendedAction", () => {
   });
 
   it("recommends booking email before other normal flow actions", () => {
-    expect(pickRecommendedAction({ ...shipments[0], mailStatus: "未发送" })).toBe("订舱邮件");
+    expect(pickRecommendedAction(draftableShipment)).toBe("订舱邮件");
+  });
+
+  it("does not recommend a new booking email after the operation has already started", () => {
+    expect(pickRecommendedAction({ ...shipments[0], mailStatus: "未发送" })).toBe("SO 识别");
   });
 
   it("recommends document preparation for pending document statuses", () => {
@@ -286,15 +292,15 @@ describe("applyShipmentStatusEditDraft", () => {
 
 describe("canCreateBookingPlanFromShipment", () => {
   it("allows a booking plan when the shipment is ready to draft", () => {
-    const result = canCreateBookingPlanFromShipment({ ...shipments[0], mailStatus: "未发送" });
+    const result = canCreateBookingPlanFromShipment(draftableShipment);
 
     expect(result).toEqual({ canCreate: true, message: "可新建订舱计划并生成中文草稿" });
   });
 
-  it("allows a booking plan for followed-up shipments that still need manual confirmation", () => {
+  it("blocks a booking plan for followed-up shipments that have already started", () => {
     const result = canCreateBookingPlanFromShipment({ ...shipments[0], mailStatus: "跟进中" });
 
-    expect(result).toEqual({ canCreate: true, message: "可新建订舱计划并生成中文草稿" });
+    expect(result).toEqual({ canCreate: false, message: "当前柜子已进入订舱后续流程" });
   });
 
   it("blocks creation with a Chinese reason when required fields are missing", () => {
@@ -303,6 +309,7 @@ describe("canCreateBookingPlanFromShipment", () => {
       bookingAgent: "",
       containerType: "",
       mailStatus: "未发送",
+      status: "待订舱",
     });
 
     expect(result).toEqual({ canCreate: false, message: "资料缺失：订舱代理、柜型" });

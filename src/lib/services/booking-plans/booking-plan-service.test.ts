@@ -4,16 +4,18 @@ import { shipments } from "@/lib/mock-data";
 
 import { createMockBookingDraftBatch, listMockBookingPlans } from "./booking-plan-service";
 
+const draftableShipment = shipments.find((shipment) => shipment.status === "待订舱") ?? shipments[0];
+
 describe("listMockBookingPlans", () => {
   it("builds booking plans from mock shipments without sent plans", () => {
     const plans = listMockBookingPlans([
-      { ...shipments[0], id: "SHP-PENDING", mailStatus: "未发送" },
+      { ...draftableShipment, id: "SHP-PENDING", mailStatus: "未发送" },
       { ...shipments[1], id: "SHP-SENT", mailStatus: "已发送" },
     ]);
 
     expect(plans).toHaveLength(1);
     expect(plans[0]).toMatchObject({
-      batchNo: "FF-CA-240610-A01",
+      batchNo: draftableShipment.batchNo,
       planStatus: "ready_to_draft",
       shipmentId: "SHP-PENDING",
     });
@@ -25,9 +27,9 @@ describe("createMockBookingDraftBatch", () => {
     const result = createMockBookingDraftBatch(
       ["SHP-READY", "SHP-MISSING", "SHP-UNKNOWN"],
       [
-        { ...shipments[0], id: "SHP-READY", mailStatus: "未发送" },
+        { ...draftableShipment, id: "SHP-READY", mailStatus: "未发送" },
         {
-          ...shipments[1],
+          ...draftableShipment,
           bookingAgent: "",
           containerType: "",
           id: "SHP-MISSING",

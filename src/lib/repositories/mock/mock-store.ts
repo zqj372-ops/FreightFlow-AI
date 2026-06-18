@@ -65,7 +65,7 @@ function seedStore(): MockStore {
   const shipments = clone(baseShipments);
 
   const draftBatchPreview = buildBookingDraftBatchResult(
-    shipments.slice(0, 3).map((shipment) => shipment.id),
+    shipments.filter((shipment) => shipment.status === "待订舱").map((shipment) => shipment.id),
     shipments,
   );
 

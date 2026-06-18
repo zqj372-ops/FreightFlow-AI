@@ -1,6 +1,8 @@
 import { Buffer } from "node:buffer";
 import { NextRequest, NextResponse } from "next/server";
 
+import { isPrismaUnavailable } from "@/lib/freightflow-data";
+import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import { recognizeShippingOrder } from "@/lib/services/documents/document-service";
 import { runOcrForFile } from "@/lib/services/documents/ocr-service";
 import {
@@ -8,6 +10,7 @@ import {
   storeShipmentAttachment,
   updateAttachmentOcr,
 } from "@/lib/services/storage/attachment-storage-service";
+import { ActionSource, MailStatus, ShipmentActionType, ShipmentStatus, SoStatus } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +25,77 @@ function getFormString(formData: FormData, key: string) {
 
 function isUploadFile(value: FormDataEntryValue | null): value is File {
   return Boolean(value && typeof value === "object" && "arrayBuffer" in value && "name" in value);
+}
+
+async function writeBackSoAttachmentRecognition(
+  shipmentId: string,
+  recognition: Awaited<ReturnType<typeof recognizeShippingOrder>>,
+) {
+  if (!isDatabaseConfigured() || recognition.status !== "recognized") return null;
+
+  const fields = recognition.extractedFields;
+
+  try {
+    const updated = await prisma.shipment.update({
+      where: { id: shipmentId },
+      data: {
+        ...(fields.carrier ? { carrier: fields.carrier } : {}),
+        ...(fields.containerNo ? { containerNo: fields.containerNo } : {}),
+        ...(fields.containerType ? { containerType: fields.containerType } : {}),
+        ...(fields.soNo ? { soNo: fields.soNo } : {}),
+        ...(fields.vesselVoyage ? { vesselVoyage: fields.vesselVoyage } : {}),
+        aiSummary: fields.soNo
+          ? `SO ${fields.soNo} 已由附件 OCR 识别并写回，放舱节点已闭环。`
+          : "SO 附件已 OCR 识别并写回，放舱节点已闭环。",
+        hoursWaitingRelease: 0,
+        mailStatus: MailStatus.SENT,
+        nextAction: "核对 SO 附件字段后推进补料、截关和 AMS/ACI/ISF 申报准备。",
+        soStatus: SoStatus.RECOGNIZED,
+        status: ShipmentStatus.RELEASED,
+      },
+      select: { id: true },
+    });
+
+    await Promise.all([
+      prisma.shipmentException.deleteMany({
+        where: {
+          shipmentId,
+          OR: [
+            { message: { contains: "等待放舱" } },
+            { message: { contains: "放舱超过" } },
+            { message: { contains: "SO 尚未" } },
+            { message: { contains: "尚未返回 SO" } },
+          ],
+        },
+      }),
+      prisma.shipmentReminderFlag.deleteMany({
+        where: {
+          shipmentId,
+          OR: [
+            { message: { contains: "催单" } },
+            { message: { contains: "放舱" } },
+            { message: { contains: "SO" } },
+          ],
+        },
+      }),
+      prisma.shipmentActionLog.create({
+        data: {
+          actionType: ShipmentActionType.SO_RECOGNITION,
+          actorName: "OCR",
+          shipmentId,
+          source: ActionSource.SYSTEM,
+          summary: fields.soNo
+            ? `SO 附件 OCR 已识别并写回：${fields.soNo}`
+            : "SO 附件 OCR 已识别并写回。",
+        },
+      }),
+    ]);
+
+    return updated;
+  } catch (error) {
+    if (isPrismaUnavailable(error)) return null;
+    throw error;
+  }
 }
 
 export async function GET(_request: NextRequest, context: RouteContext) {
@@ -83,6 +157,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           shipmentId: id,
           sourceText: ocr.text,
         });
+        await writeBackSoAttachmentRecognition(id, soRecognition);
       }
     }
 

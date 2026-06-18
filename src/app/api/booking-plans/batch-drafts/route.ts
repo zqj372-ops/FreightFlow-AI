@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { jsonResponse } from "@/lib/http/json-response";
 import { createBookingDraftBatchWithFallback } from "@/lib/services/booking-plans/booking-plan-service";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +29,7 @@ export async function POST(request: NextRequest) {
       typeof body.createdBy === "string" ? body.createdBy : undefined,
     );
 
-    return NextResponse.json(result);
+    return jsonResponse(result);
   } catch (error) {
     console.error("POST /api/booking-plans/batch-drafts failed", error);
     return NextResponse.json({ error: "Failed to generate booking drafts." }, { status: 500 });

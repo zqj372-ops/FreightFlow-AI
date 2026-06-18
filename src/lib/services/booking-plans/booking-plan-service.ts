@@ -77,6 +77,21 @@ async function upsertBookingPlanForShipment(shipment: ShipmentRecord) {
 
   if (plan.planStatus === "sent") return null;
 
+  const existing = await prisma.bookingPlan.findUnique({ where: { shipmentId: plan.shipmentId } });
+  const preservedStatuses = new Set<DbBookingPlanStatus>([
+    DbBookingPlanStatus.DRAFT_READY,
+    DbBookingPlanStatus.SEND_FAILED,
+  ]);
+  if (existing && preservedStatuses.has(existing.planStatus)) {
+    return {
+      ...plan,
+      id: existing.id,
+      lastDraftId: existing.lastDraftId,
+      lastError: existing.lastError,
+      planStatus: existing.planStatus === DbBookingPlanStatus.DRAFT_READY ? "draft_ready" as const : "send_failed" as const,
+    };
+  }
+
   const record = await prisma.bookingPlan.upsert({
     create: {
       id: plan.id,
@@ -393,6 +408,12 @@ export async function sendEmailDraft(draftId: string) {
       data: {
         lastEmailTime: result.providerMessage.sentAt,
         mailStatus: "SENT",
+        nextAction: "等待代理回传 SO 信息，IMAP 识别后人工确认写回。",
+        reminderFlags: {
+          deleteMany: { message: "等待 SO 回传" },
+          create: { message: "等待 SO 回传", sortOrder: 0 },
+        },
+        soStatus: "PENDING_RECOGNITION",
         status: DbShipmentStatus.WAITING_RELEASE,
       },
       where: { id: mapped.shipmentId },
@@ -451,6 +472,9 @@ async function sendMockEmailDraft(draftId: string): Promise<SendShipmentEmailRes
     patch: {
       lastEmailTime: formatDateForUi(providerMessage.sentAt),
       mailStatus: "已发送",
+      nextAction: "等待代理回传 SO 信息，IMAP 识别后人工确认写回。",
+      reminderFlags: ["等待 SO 回传"],
+      soStatus: "待识别",
       status: "等待放舱",
     },
     shipmentId: draft.shipmentId,

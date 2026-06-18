@@ -7,10 +7,12 @@ import {
   evaluateBookingPlanReadiness,
 } from "./booking-plan-rules";
 
+const draftableShipment = shipments.find((shipment) => shipment.status === "待订舱") ?? shipments[0];
+
 describe("evaluateBookingPlanReadiness", () => {
   it("marks a complete unsent shipment as ready to draft", () => {
     const result = evaluateBookingPlanReadiness({
-      ...shipments[0],
+      ...draftableShipment,
       mailStatus: "未发送",
     });
 
@@ -19,19 +21,30 @@ describe("evaluateBookingPlanReadiness", () => {
     expect(result.riskFlags).toContain("可生成订舱草稿");
   });
 
-  it("keeps a followed-up but unsent shipment ready for a pending booking draft", () => {
+  it("keeps followed-up shipments out of the pending booking draft queue", () => {
     const result = evaluateBookingPlanReadiness({
       ...shipments[0],
       mailStatus: "跟进中",
     });
 
-    expect(result.status).toBe("ready_to_draft");
-    expect(result.riskFlags).toContain("可生成订舱草稿");
+    expect(result.status).toBe("sent");
+    expect(result.riskFlags).toEqual(["订舱邮件已发送"]);
+  });
+
+  it("keeps already-started operations out of the pending booking draft queue", () => {
+    const result = evaluateBookingPlanReadiness({
+      ...shipments[0],
+      mailStatus: "未发送",
+      status: "已催放舱",
+    });
+
+    expect(result.status).toBe("sent");
+    expect(result.riskFlags).toEqual(["当前状态为已催放舱"]);
   });
 
   it("marks missing booking agent and container type as missing info", () => {
     const result = evaluateBookingPlanReadiness({
-      ...shipments[0],
+      ...draftableShipment,
       bookingAgent: "",
       containerType: "",
       mailStatus: "未发送",
@@ -71,15 +84,15 @@ describe("buildBookingDraftPlan", () => {
 describe("buildBookingPlanRecords", () => {
   it("lists only shipments that still need booking work", () => {
     const records = buildBookingPlanRecords([
-      { ...shipments[0], mailStatus: "未发送" },
+      { ...draftableShipment, mailStatus: "未发送" },
       { ...shipments[1], mailStatus: "已发送" },
     ]);
 
     expect(records).toHaveLength(1);
     expect(records[0]).toMatchObject({
-      batchNo: "FF-CA-240610-A01",
+      batchNo: draftableShipment.batchNo,
       planStatus: "ready_to_draft",
-      shipmentId: "SHP-240610-001",
+      shipmentId: draftableShipment.id,
     });
   });
 });
@@ -89,9 +102,9 @@ describe("buildBookingDraftBatchResult", () => {
     const result = buildBookingDraftBatchResult(
       ["SHP-READY", "SHP-MISSING", "SHP-UNKNOWN"],
       [
-        { ...shipments[0], id: "SHP-READY", mailStatus: "未发送" },
+        { ...draftableShipment, id: "SHP-READY", mailStatus: "未发送" },
         {
-          ...shipments[1],
+          ...draftableShipment,
           bookingAgent: "",
           containerType: "",
           id: "SHP-MISSING",

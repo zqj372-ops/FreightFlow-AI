@@ -7,6 +7,7 @@ datasource db {
 }
 
 enum ShipmentStatus {
+  PENDING_BOOKING      @map("待订舱")
   BOOKING_SENT         @map("已发送订舱")
   WAITING_RELEASE      @map("等待放舱")
   RELEASE_FOLLOWED_UP  @map("已催放舱")

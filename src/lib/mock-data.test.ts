@@ -19,7 +19,7 @@ describe("summarizeShipments", () => {
       redAlerts: 3,
       yellowAlerts: 1,
       greenNormal: 2,
-      waitingRelease: 2,
+      waitingRelease: 1,
       pendingDocs: 2,
     });
   });

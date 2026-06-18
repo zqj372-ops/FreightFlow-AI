@@ -21,6 +21,7 @@ const prisma = new PrismaClient({
 });
 
 const shipmentStatusToDb = {
+  待订舱: DbShipmentStatus.PENDING_BOOKING,
   已发送订舱: DbShipmentStatus.BOOKING_SENT,
   等待放舱: DbShipmentStatus.WAITING_RELEASE,
   已催放舱: DbShipmentStatus.RELEASE_FOLLOWED_UP,

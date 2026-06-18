@@ -35,18 +35,18 @@ describe("mock booking plan repository", () => {
       originPort: "Yantian",
       planStatus: "ready_to_draft",
       preferredBookingAgent: "Test Agent",
-      shipmentId: "SHP-240610-001",
+      shipmentId: "SHP-240610-006",
       snapshot: { missingFields: [], riskFlags: ["ready"] },
     });
     expect(plan.planStatus).toBe("ready_to_draft");
     expect(plan.preferredBookingAgent).toBe("Test Agent");
 
-    const found = await repos.bookingPlans.getByShipmentId("SHP-240610-001");
+    const found = await repos.bookingPlans.getByShipmentId("SHP-240610-006");
     expect(found?.id).toBe("plan-test");
   });
 
   it("updates the plan status and preserves missing fields", async () => {
-    const seeded = await repos.bookingPlans.getByShipmentId("SHP-240610-001");
+    const seeded = await repos.bookingPlans.getByShipmentId("SHP-240610-006");
     expect(seeded).not.toBeNull();
 
     const updated = await repos.bookingPlans.updateStatus({
@@ -61,7 +61,7 @@ describe("mock booking plan repository", () => {
   });
 
   it("binds a draft id to a plan and clears it again", async () => {
-    const seeded = await repos.bookingPlans.getByShipmentId("SHP-240610-001");
+    const seeded = await repos.bookingPlans.getByShipmentId("SHP-240610-006");
     expect(seeded).not.toBeNull();
 
     const bound = await repos.bookingPlans.bindLastDraft(seeded!.id, "draft-123");

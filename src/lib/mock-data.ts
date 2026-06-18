@@ -1,4 +1,5 @@
 export type ShipmentStatus =
+  | "待订舱"
   | "已发送订舱"
   | "等待放舱"
   | "已催放舱"
@@ -76,6 +77,11 @@ export const statusColumns: Array<{
   title: string;
   statuses: ShipmentStatus[];
 }> = [
+  {
+    key: "booking-draft",
+    title: "待订舱",
+    statuses: ["待订舱"],
+  },
   {
     key: "waiting-release",
     title: "等待放舱",
@@ -292,18 +298,18 @@ export const shipments: ShipmentRecord[] = [
     cutoffTime: "2026-06-12 15:00",
     pickupLocation: "Shekou CY 8",
     returnLocation: "Shekou Phase III",
-    status: "等待放舱",
+    status: "待订舱",
     operator: "Nina",
     followUpCount: 0,
-    lastEmailTime: "2026-06-10 14:05",
-    hoursWaitingRelease: 3,
+    lastEmailTime: "",
+    hoursWaitingRelease: 0,
     hoursToCutoff: 33,
-    aiSummary: "订舱邮件已出，尚在 4 小时阈值内，可继续等待代理回复。",
+    aiSummary: "托书资料已齐，尚未发送首封订舱邮件，适合生成订舱计划并人工确认发送。",
     exceptions: [],
-    nextAction: "17:00 后若仍无回复，自动进入催单队列。",
+    nextAction: "生成订舱计划草稿，核对附件后发送给 Harbor Chain。",
     reminderFlags: [],
     documentProgress: { ams: "待处理", aci: "待处理", isf: "待处理" },
-    mailStatus: "已发送",
+    mailStatus: "未发送",
     soStatus: "待识别",
     documentStatus: "待生成",
   },

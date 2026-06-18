@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { shipments } from "@/lib/mock-data";
+import { prisma } from "@/lib/prisma";
 import {
   __resetRepositoryCache,
   getRepositories,
@@ -18,6 +19,7 @@ describe("repository factory", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     if (originalDatabaseUrl === undefined) {
       delete process.env.DATABASE_URL;
     } else {
@@ -49,8 +51,11 @@ describe("repository factory", () => {
   });
 
   it("treats an unreachable DATABASE_URL as a mock fallback", async () => {
-    // Point to a port nothing is listening on so the probe $queryRaw fails.
+    // Force the probe failure. The shared Prisma client may already be
+    // initialized from the real local .env before this test mutates env vars.
     process.env.DATABASE_URL = "postgresql://postgres:postgres@127.0.0.1:1/postgres?schema=public";
+    vi.spyOn(prisma, "$queryRaw").mockRejectedValueOnce(new Error("Can't reach database server at 127.0.0.1:1"));
+
     const repos = await getRepositories();
     expect(repos.mode).toBe<RepositoryMode>("mock");
   });

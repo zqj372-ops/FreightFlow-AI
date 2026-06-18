@@ -3,6 +3,7 @@ import {
   EmailMessageSyncStatus,
   EmailRecognitionStatus,
   EmailRecognitionType as DbEmailRecognitionTypeEnum,
+  MailStatus,
   ShipmentActionType,
   ShipmentDocumentStatus,
   ShipmentStatus,
@@ -54,6 +55,30 @@ export type EmailRecognitionReviewResult = {
   summary: string;
 };
 
+type RecognitionWriteback = {
+  actionType: ShipmentActionType;
+  clearExceptionKeywords?: string[];
+  clearReminderKeywords?: string[];
+  exceptionMessage?: string;
+  shipmentData: Record<string, unknown>;
+  summary: string;
+};
+
+type MockRecognitionWriteback = {
+  actionType: "订舱邮件" | "催单提醒" | "补料文件" | "SO 识别" | "AMS/ACI/ISF" | "异常标记";
+  shipmentPatch: Partial<ShipmentRecord>;
+  summary: string;
+};
+
+type RecognitionExtractedFields = {
+  carrier?: string;
+  containerNo?: string;
+  containerType?: string;
+  etd?: string;
+  soNo?: string;
+  vesselVoyage?: string;
+};
+
 const mockMessages: RawEmailMessage[] = [
   {
     bodyText: "您好，SO已出，附件请查收。SO: OOLU8791320。",
@@ -80,6 +105,28 @@ const mockMessages: RawEmailMessage[] = [
 
 function asStringArray(value: unknown) {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function stringField(fields: unknown, key: keyof RecognitionExtractedFields) {
+  if (!fields || typeof fields !== "object") return undefined;
+
+  const value = (fields as Record<string, unknown>)[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function parseRecognitionFields(fields: unknown): RecognitionExtractedFields {
+  return {
+    carrier: stringField(fields, "carrier"),
+    containerNo: stringField(fields, "containerNo"),
+    containerType: stringField(fields, "containerType"),
+    etd: stringField(fields, "etd"),
+    soNo: stringField(fields, "soNo"),
+    vesselVoyage: stringField(fields, "vesselVoyage"),
+  };
+}
+
+function removeItemsContaining(items: string[], keywords: string[]) {
+  return items.filter((item) => !keywords.some((keyword) => item.includes(keyword)));
 }
 
 function toQueueItem(
@@ -422,12 +469,44 @@ export async function confirmEmailRecognition(id: string, input: EmailRecognitio
       throw new Error("Matched shipment not found.");
     }
 
-    const writeback = buildRecognitionWriteback(recognition.recognitionType, shipment.status);
+    const writeback = buildRecognitionWriteback(
+      recognition.recognitionType,
+      shipment.status,
+      parseRecognitionFields(recognition.extractedFields),
+      recognition.summary,
+    );
 
     await tx.shipment.update({
       where: { id: recognition.matchedShipmentId },
       data: writeback.shipmentData,
     });
+
+    if (writeback.clearExceptionKeywords?.length) {
+      await tx.shipmentException.deleteMany({
+        where: {
+          shipmentId: recognition.matchedShipmentId,
+          OR: writeback.clearExceptionKeywords.map((keyword) => ({ message: { contains: keyword } })),
+        },
+      });
+    }
+
+    if (writeback.clearReminderKeywords?.length) {
+      await tx.shipmentReminderFlag.deleteMany({
+        where: {
+          shipmentId: recognition.matchedShipmentId,
+          OR: writeback.clearReminderKeywords.map((keyword) => ({ message: { contains: keyword } })),
+        },
+      });
+    }
+
+    if (writeback.exceptionMessage) {
+      await tx.shipmentException.create({
+        data: {
+          message: writeback.exceptionMessage,
+          shipmentId: recognition.matchedShipmentId,
+        },
+      });
+    }
 
     await tx.emailRecognitionResult.update({
       where: { id },
@@ -482,10 +561,11 @@ export async function markEmailRecognitionException(id: string, input: EmailReco
     }
 
     const summary = `邮件识别异常：${recognition.summary}`;
+    const writeback = buildExceptionWriteback(summary);
 
     await tx.shipment.update({
       where: { id: recognition.matchedShipmentId },
-      data: { status: ShipmentStatus.EXCEPTION_PROCESSING },
+      data: writeback.shipmentData,
     });
 
     await tx.shipmentException.create({
@@ -627,13 +707,11 @@ async function markMockEmailRecognitionException(id: string, input: EmailRecogni
 
   const shipment = await repositories.shipments.getById(recognition.matchedShipmentId);
   const summary = `邮件识别异常：${recognition.summary}`;
+  const writeback = buildMockExceptionWriteback(summary, shipment ?? undefined);
   const now = new Date().toISOString();
 
   await repositories.shipments.advanceStatus({
-    patch: {
-      exceptions: Array.from(new Set([...(shipment?.exceptions ?? []), summary])),
-      status: "异常处理中",
-    },
+    patch: writeback.shipmentPatch,
     shipmentId: recognition.matchedShipmentId,
   });
   await repositories.emailRecognitions.updateStatus({
@@ -694,24 +772,66 @@ function normalizeReviewer(reviewer: string | undefined) {
   return reviewer?.trim() || "操作员";
 }
 
-function buildMockRecognitionWriteback(recognition: RecognitionWithEmail, shipment: ShipmentRecord) {
+function buildMockExceptionWriteback(summary: string, shipment?: ShipmentRecord): MockRecognitionWriteback {
+  return {
+    actionType: "异常标记",
+    shipmentPatch: {
+      aiSummary: `${summary} 当前需要人工判定是否改柜型、重发资料或联系客户确认。`,
+      exceptions: Array.from(new Set([...(shipment?.exceptions ?? []), summary])),
+      nextAction: "先核对原始邮件与 SO/托书字段，再联系客户或代理确认处理口径。",
+      status: "异常处理中",
+    },
+    summary,
+  };
+}
+
+function buildMockRecognitionWriteback(
+  recognition: RecognitionWithEmail,
+  shipment: ShipmentRecord,
+): MockRecognitionWriteback {
+  const fields = parseRecognitionFields(recognition.extractedFields);
+
   switch (recognition.recognitionType) {
-    case "SO_RECEIVED":
+    case "SO_RECEIVED": {
+      const soLabel = fields.soNo ? `SO ${fields.soNo}` : "SO";
+
       return {
         actionType: "SO 识别" as const,
         shipmentPatch: {
+          ...(fields.carrier ? { carrier: fields.carrier } : {}),
+          ...(fields.containerNo ? { containerNo: fields.containerNo } : {}),
+          ...(fields.containerType ? { containerType: fields.containerType } : {}),
+          ...(fields.soNo ? { soNo: fields.soNo } : {}),
+          ...(fields.vesselVoyage ? { vesselVoyage: fields.vesselVoyage } : {}),
+          aiSummary: `${soLabel} 已回传并经人工确认，放舱节点已闭环；下一步进入补料、截单和申报准备。`,
+          exceptions: removeItemsContaining(shipment.exceptions, ["等待放舱", "放舱超过", "SO 尚未", "尚未返回 SO"]),
+          hoursWaitingRelease: 0,
+          mailStatus: "已发送" as const,
+          nextAction: "核对 SO 附件中的柜号、柜型、船名航次和截单/截关时间，然后推进补料与 AMS/ACI/ISF。",
+          reminderFlags: removeItemsContaining(shipment.reminderFlags, ["催单", "放舱", "SO"]),
           soStatus: "已识别" as const,
-          status: shipment.status === "等待放舱" || shipment.status === "已催放舱" ? "已放舱" as const : shipment.status,
+          status:
+            shipment.status === "已发送订舱" || shipment.status === "等待放舱" || shipment.status === "已催放舱"
+              ? "已放舱" as const
+              : shipment.status,
         },
         summary: "SO 回传已人工确认并写回 Shipment。仍保留人工审核记录。",
       };
+    }
     case "SUPPLEMENT_CONFIRMED":
       return {
         actionType: "补料文件" as const,
         shipmentPatch: {
+          aiSummary: "补料确认邮件已人工确认，SI/补料节点已闭环；下一步推进申报、截关校验和装船前跟踪。",
           documentStatus: "已确认" as const,
+          exceptions: removeItemsContaining(shipment.exceptions, ["补料", "SI"]),
+          nextAction: "复核 AMS/ACI/ISF 与报关资料状态，确认截关前所有申报文件已完成。",
+          reminderFlags: removeItemsContaining(shipment.reminderFlags, ["补料", "SI"]),
           status:
-            shipment.status === "已发送补料" || shipment.status === "等待补料确认"
+            shipment.status === "已放舱" ||
+            shipment.status === "待补料" ||
+            shipment.status === "已发送补料" ||
+            shipment.status === "等待补料确认"
               ? "补料已确认" as const
               : shipment.status,
         },
@@ -728,11 +848,7 @@ function buildMockRecognitionWriteback(recognition: RecognitionWithEmail, shipme
       };
     case "EXCEPTION":
       return {
-        actionType: "异常标记" as const,
-        shipmentPatch: {
-          exceptions: Array.from(new Set([...shipment.exceptions, `邮件识别异常：${recognition.summary}`])),
-          status: "异常处理中" as const,
-        },
+        ...buildMockExceptionWriteback(`邮件识别异常：${recognition.summary}`, shipment),
         summary: "异常邮件已人工确认并写回 Shipment。",
       };
     case "UNKNOWN":
@@ -740,27 +856,65 @@ function buildMockRecognitionWriteback(recognition: RecognitionWithEmail, shipme
   }
 }
 
-function buildRecognitionWriteback(type: DbEmailRecognitionType, currentStatus: ShipmentStatus) {
+function buildExceptionWriteback(summary: string): Pick<RecognitionWriteback, "shipmentData" | "summary"> {
+  return {
+    shipmentData: {
+      aiSummary: `${summary} 当前需要人工判定是否改柜型、重发资料或联系客户确认。`,
+      nextAction: "先核对原始邮件与 SO/托书字段，再联系客户或代理确认处理口径。",
+      status: ShipmentStatus.EXCEPTION_PROCESSING,
+    },
+    summary,
+  };
+}
+
+function buildRecognitionWriteback(
+  type: DbEmailRecognitionType,
+  currentStatus: ShipmentStatus,
+  fields: RecognitionExtractedFields = {},
+  recognitionSummary = "识别到异常邮件：代理反馈柜型或资料不一致，需要人工确认后处理。",
+): RecognitionWriteback {
   switch (type) {
-    case DbEmailRecognitionTypeEnum.SO_RECEIVED:
+    case DbEmailRecognitionTypeEnum.SO_RECEIVED: {
+      const soLabel = fields.soNo ? `SO ${fields.soNo}` : "SO";
       return {
         actionType: ShipmentActionType.SO_RECOGNITION,
+        clearExceptionKeywords: ["等待放舱", "放舱超过", "SO 尚未", "尚未返回 SO"],
+        clearReminderKeywords: ["催单", "放舱", "SO"],
         shipmentData: {
+          ...(fields.carrier ? { carrier: fields.carrier } : {}),
+          ...(fields.containerNo ? { containerNo: fields.containerNo } : {}),
+          ...(fields.containerType ? { containerType: fields.containerType } : {}),
+          ...(fields.soNo ? { soNo: fields.soNo } : {}),
+          ...(fields.vesselVoyage ? { vesselVoyage: fields.vesselVoyage } : {}),
+          aiSummary: `${soLabel} 已回传并经人工确认，放舱节点已闭环；下一步进入补料、截单和申报准备。`,
+          hoursWaitingRelease: 0,
+          mailStatus: MailStatus.SENT,
+          nextAction: "核对 SO 附件中的柜号、柜型、船名航次和截单/截关时间，然后推进补料与 AMS/ACI/ISF。",
           soStatus: SoStatus.RECOGNIZED,
           status:
-            currentStatus === ShipmentStatus.WAITING_RELEASE || currentStatus === ShipmentStatus.RELEASE_FOLLOWED_UP
+            currentStatus === ShipmentStatus.BOOKING_SENT ||
+            currentStatus === ShipmentStatus.WAITING_RELEASE ||
+            currentStatus === ShipmentStatus.RELEASE_FOLLOWED_UP
               ? ShipmentStatus.RELEASED
               : currentStatus,
         },
         summary: "SO 回传已人工确认并写回 Shipment。仍保留人工审核记录。",
       };
+    }
     case DbEmailRecognitionTypeEnum.SUPPLEMENT_CONFIRMED:
       return {
         actionType: ShipmentActionType.DOCUMENTS,
+        clearExceptionKeywords: ["补料", "SI"],
+        clearReminderKeywords: ["补料", "SI"],
         shipmentData: {
+          aiSummary: "补料确认邮件已人工确认，SI/补料节点已闭环；下一步推进申报、截关校验和装船前跟踪。",
           documentStatus: ShipmentDocumentStatus.CONFIRMED,
+          nextAction: "复核 AMS/ACI/ISF 与报关资料状态，确认截关前所有申报文件已完成。",
           status:
-            currentStatus === ShipmentStatus.DOCUMENTS_SENT || currentStatus === ShipmentStatus.DOCUMENTS_CONFIRMING
+            currentStatus === ShipmentStatus.RELEASED ||
+            currentStatus === ShipmentStatus.PENDING_DOCUMENTS ||
+            currentStatus === ShipmentStatus.DOCUMENTS_SENT ||
+            currentStatus === ShipmentStatus.DOCUMENTS_CONFIRMING
               ? ShipmentStatus.DOCUMENTS_CONFIRMED
               : currentStatus,
         },
@@ -776,11 +930,11 @@ function buildRecognitionWriteback(type: DbEmailRecognitionType, currentStatus: 
         summary: "订舱/催单回复已人工确认并记录到 Shipment。",
       };
     case DbEmailRecognitionTypeEnum.EXCEPTION:
+      const exceptionSummary = `邮件识别异常：${recognitionSummary}`;
       return {
         actionType: ShipmentActionType.EXCEPTION_MARK,
-        shipmentData: {
-          status: ShipmentStatus.EXCEPTION_PROCESSING,
-        },
+        exceptionMessage: exceptionSummary,
+        ...buildExceptionWriteback(exceptionSummary),
         summary: "异常邮件已人工确认并写回 Shipment。",
       };
     case DbEmailRecognitionTypeEnum.UNKNOWN:

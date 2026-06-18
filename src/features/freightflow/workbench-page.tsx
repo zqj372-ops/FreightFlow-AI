@@ -104,14 +104,22 @@ import {
 const bookingSubNavItems = ["柜子队列", "新建订舱计划", "柜子状态明细", "操作面板", "邮件识别队列", "AI 副驾"] as const;
 type BookingSubNavItem = (typeof bookingSubNavItems)[number];
 
+function columnKeyForShipmentStatus(status: ShipmentRecord["status"]) {
+  return statusColumns.find((column) => column.statuses.includes(status))?.key ?? statusColumns[0]?.key ?? "waiting-release";
+}
+
+const initialStatusColumn = statusColumns[0];
+const initialShipmentId =
+  shipments.find((shipment) => initialStatusColumn?.statuses.includes(shipment.status))?.id ?? shipments[0]?.id ?? "";
+
 export function FreightflowWorkbenchPage() {
   const [shipmentState, setShipmentState] = useState<ShipmentRecord[]>(shipments);
   const [activeNav, setActiveNav] = useState(mainNav[0] ?? "订舱工作台");
   const [activeBookingSubNav, setActiveBookingSubNav] = useState<BookingSubNavItem>("柜子队列");
-  const [activeColumn, setActiveColumn] = useState(statusColumns[0]?.key ?? "waiting-release");
+  const [activeColumn, setActiveColumn] = useState(initialStatusColumn?.key ?? "waiting-release");
   const [alertFilter, setAlertFilter] = useState<AlertLevel | "all">("all");
   const [ownerFilter, setOwnerFilter] = useState("all");
-  const [selectedShipmentId, setSelectedShipmentId] = useState(shipments[0]?.id ?? "");
+  const [selectedShipmentId, setSelectedShipmentId] = useState(initialShipmentId);
   const [searchTerm, setSearchTerm] = useState("");
   const [aiInput, setAiInput] = useState<string>(quickPrompts[0]);
   const [aiReply, setAiReply] = useState(
@@ -241,6 +249,7 @@ export function FreightflowWorkbenchPage() {
   const selectedShipment = useMemo(() => {
     return (
       visibleShipments.find((shipment) => shipment.id === selectedShipmentId) ??
+      shipmentState.find((shipment) => shipment.id === selectedShipmentId) ??
       visibleShipments[0] ??
       shipmentState[0]
     );
@@ -359,7 +368,7 @@ export function FreightflowWorkbenchPage() {
     { label: "附件", value: bookingDraft.attachmentName },
   ] satisfies ReadonlyArray<DetailItem>;
 
-  const refreshWorkbenchData = useCallback(async (showToast = false) => {
+  const refreshWorkbenchData = useCallback(async (showToast = false, focusShipmentId?: string | null) => {
     try {
       const [shipmentResult, contactResult] = await Promise.all([
         loadShipmentsFromApi(),
@@ -368,11 +377,22 @@ export function FreightflowWorkbenchPage() {
 
       if (shipmentResult.data.length > 0) {
         setShipmentState(shipmentResult.data);
-        setSelectedShipmentId((current) =>
-          shipmentResult.data.some((shipment) => shipment.id === current)
-            ? current
-            : shipmentResult.data[0]?.id ?? "",
-        );
+        const focusedShipment = focusShipmentId
+          ? shipmentResult.data.find((shipment) => shipment.id === focusShipmentId)
+          : null;
+
+        if (focusedShipment) {
+          setActiveColumn(columnKeyForShipmentStatus(focusedShipment.status));
+          setSelectedShipmentId(focusedShipment.id);
+          resetAiPanel(focusedShipment);
+          resetBookingWorkflow(focusedShipment);
+        } else {
+          setSelectedShipmentId((current) =>
+            shipmentResult.data.some((shipment) => shipment.id === current)
+              ? current
+              : shipmentResult.data[0]?.id ?? "",
+          );
+        }
       }
 
       setContactState((current) => mergeContacts(contactResult.data, current));
@@ -887,6 +907,7 @@ export function FreightflowWorkbenchPage() {
         tone: "success",
         message: `附件已保存：${result.data.attachment.originalName}，${statusCopy}${fields ? `，识别 ${fields}` : ""}`,
       });
+      await refreshWorkbenchData(false, selectedShipment.id);
     } catch (error) {
       setToast({
         tone: "info",
@@ -904,7 +925,7 @@ export function FreightflowWorkbenchPage() {
     try {
       const result = await reviewEmailRecognitionFromApi({ action, id, reviewer: "操作员" });
       setToast({ tone: "success", message: result.data.summary });
-      await Promise.all([refreshEmailRecognitions(), refreshWorkbenchData()]);
+      await Promise.all([refreshEmailRecognitions(), refreshWorkbenchData(false, result.data.shipmentId)]);
     } catch (error) {
       setToast({
         tone: "info",
