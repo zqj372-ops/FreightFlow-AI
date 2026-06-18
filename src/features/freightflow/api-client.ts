@@ -43,12 +43,55 @@ export type EmailRecognitionReviewResult = {
   summary: string;
 };
 
+export type ShipmentAttachmentRecord = {
+  byteSize: number;
+  checksum: string;
+  createdAt: string;
+  documentType: string;
+  fileName: string;
+  id: string;
+  mimeType: string;
+  ocrConfidence: number | null;
+  ocrStatus: "failed" | "not_started" | "recognized" | "unsupported";
+  ocrText: string | null;
+  originalName: string;
+  shipmentId: string;
+  storageKey: string;
+  updatedAt: string;
+  uploadedBy: string | null;
+};
+
+export type AttachmentUploadResult = {
+  attachment: ShipmentAttachmentRecord;
+  ocr: {
+    confidence: number | null;
+    engine: "tesseract.js" | "text";
+    status: "failed" | "recognized" | "unsupported";
+    text: string | null;
+    warning?: string;
+  } | null;
+  soRecognition: {
+    confidence: number;
+    extractedFields: {
+      carrier: string | null;
+      containerNo: string | null;
+      containerType: string | null;
+      etd: string | null;
+      soNo: string | null;
+      vesselVoyage: string | null;
+    };
+    mode: "ocr" | "placeholder";
+    status: "queued" | "recognized";
+    warnings: string[];
+  } | null;
+};
+
 export type ShipmentDocumentKind = "booking-template" | "supplement-template";
 
 type ApiEnvelope<T> = {
   data?: T;
   error?: string;
-  source?: "database" | "mock";
+  source?: "database" | "local" | "mock";
   warning?: string;
 };
 
@@ -334,6 +377,38 @@ export async function reviewEmailRecognitionFromApi({
 
   if (!response.ok || !payload.data) {
     throw new Error(payload.error ?? "Failed to review email recognition.");
+  }
+
+  return {
+    data: payload.data,
+    source: payload.source ?? "database",
+  };
+}
+
+export async function uploadShipmentAttachmentFromApi({
+  documentType = "attachment",
+  file,
+  ocr = true,
+  shipmentId,
+}: {
+  documentType?: "attachment" | "shipping_order" | "so" | "supplement";
+  file: File;
+  ocr?: boolean;
+  shipmentId: string;
+}) {
+  const formData = new FormData();
+  formData.set("file", file);
+  formData.set("documentType", documentType);
+  formData.set("ocr", ocr ? "true" : "false");
+
+  const response = await fetch(`/api/shipments/${encodeURIComponent(shipmentId)}/attachments`, {
+    method: "POST",
+    body: formData,
+  });
+  const payload = await readJson<AttachmentUploadResult>(response);
+
+  if (!response.ok || !payload.data) {
+    throw new Error(payload.error ?? "Failed to upload attachment.");
   }
 
   return {

@@ -13,12 +13,17 @@
     "prisma:format": "prisma format",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
-    "prisma:seed": "node --experimental-strip-types prisma/seed.mjs"
+    "prisma:seed": "node --experimental-strip-types prisma/seed.mjs",
+    "db:up": "docker compose up -d postgres",
+    "db:reset": "prisma migrate reset --force && npm run prisma:seed",
+    "e2e": "playwright test",
+    "e2e:headed": "playwright test --headed"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "docx": "^9.7.1",
+    "fflate": "^0.8.3",
     "imapflow": "^1.4.0",
     "lucide-react": "^1.17.0",
     "next": "16.2.9",
@@ -27,9 +32,10 @@
     "prisma": "^7.8.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "xlsx": "^0.18.5"
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.0",
     "@tailwindcss/postcss": "^4",
     "@types/imapflow": "^1.0.23",
     "@types/node": "^20",
@@ -38,6 +44,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
+    "exceljs": "^4.4.0",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.8"

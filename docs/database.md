@@ -38,10 +38,13 @@
 本地 PostgreSQL 未启动时,读接口使用 mock fallback 保持可演示;写接口不做假持久化,会返回明确 503。若要落库验证,先确保 `DATABASE_URL` 指向可用 PostgreSQL,再执行:
 
 ```bash
+npm run db:up
 npm run prisma:generate
 npm run prisma:migrate:deploy
 npm run prisma:seed
 ```
+
+本地 Docker 路径由 [`docker-compose.yml`](../docker-compose.yml) 提供,默认启动 `postgres:16-alpine` 并暴露 `127.0.0.1:5432`。
 
 ## 2. 逻辑数据模型
 
@@ -127,6 +130,7 @@ npm run prisma:seed
 | `shipment_action_logs` | 动作流(订舱/催单/补料/...) | 已建模;`POST /api/shipments/[id]/actions` 写入 |
 | `contacts` | `ContactRecord` | 已建模;`GET/POST /api/contacts` 读写 |
 | `ai_requests` | AI 请求/响应/耗时/状态 | 已由 AI route 审计写入;当前 schema 中 `shipmentId` 外键指向 `shipments.id`,删除 shipment 时置空 |
+| `shipment_attachments` | 上传附件、存储 key、checksum、OCR 结果 | 已建模;`POST /api/shipments/[id]/attachments` 写入 |
 
 ### 4.2 Schema 覆盖审计
 

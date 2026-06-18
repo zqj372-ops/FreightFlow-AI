@@ -168,12 +168,12 @@
 
 ### 4.3 E2E(P2)
 
-- 状态:已补服务/API 级 mock 操作验收,尚未补浏览器 Playwright。
+- 状态:已补服务/API 级 mock 操作验收与浏览器 Playwright smoke。
 - 已覆盖:`createBookingDraftBatchWithFallback` → `getEmailDraft` → `sendEmailDraft` → Shipment 状态写回。
 - 已覆盖:`runEmailRecognitionSyncWithFallback` → `listEmailRecognitionQueueWithFallback` → `confirmEmailRecognition` → Shipment SO 状态写回。
 - 已覆盖:`POST /api/email-sync/run` 返回前端期望的 `{ data, source }` envelope。
-- 剩余:Playwright 打开首页 → 选中柜子 → 打开 booking modal → 填收件人 → 发送。
-- 剩余:Playwright 依次打开 SO识别中心 / 补料中心 / AMS/ACI/ISF / 邮件中心 / 异常中心,确认每个模块都有数据面板、主操作按钮和错误提示。
+- 已覆盖:Playwright 打开首页 → SO识别中心 → 上传 SO 文本附件/OCR → 邮件中心 → 同步邮箱。
+- 剩余:Playwright 扩展到订舱 modal 填收件人并发送、补料/AMS/异常中心全流程。
 
 ### 4.4 CI 质量门禁(P2)
 
@@ -213,20 +213,20 @@
 
 ```
 Day 1:
-  - [ ] 选定数据库与 ORM(NestJS + Prisma + PostgreSQL 推荐)
-  - [ ] 跑通 schema 与 migration
+  - [x] 选定数据库与 ORM(PostgreSQL + Prisma)
+  - [x] 提供本地 PostgreSQL docker compose、schema 与 migration
 
 Day 2:
-  - [ ] shipments / contacts / action_logs 三表 CRUD
+  - [x] shipments / contacts / action_logs 三表 CRUD
   - [x] 前端 fetch 接入(读接口 + 动作/联系人后台持久化尝试)
 
 Day 3:
-  - [ ] BookingModal 接入 `POST /api/shipments/[shipmentId]/emails`
-  - [ ] 选定并接入真实 SMTP provider
-  - [ ] SO 上传/OCR provider 与补料 Word / Excel 生成器接入
+  - [x] BookingModal 接入 `POST /api/shipments/[shipmentId]/emails`
+  - [x] 接入 SMTP/IMAP provider 与设置测试
+  - [x] SO 上传/OCR provider、文件存储与补料 Word / Excel 生成器接入
 
 Day 4:
-  - [ ] 纯函数单测 + AI 路由测试
+  - [x] 纯函数单测 + AI 路由测试 + 服务/API 操作测试 + Playwright smoke
   - [ ] 部署草图 + 监控占位
 ```
 

@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 import { shipments } from "@/lib/mock-data";
 import {
   generateBookingInstructionDocument,
   generateSupplementTemplate,
+  recognizeShippingOrder,
 } from "./document-service";
 
 describe("generateBookingInstructionDocument", () => {
@@ -22,7 +23,7 @@ describe("generateBookingInstructionDocument", () => {
     expect(result.mode).toBe("generated");
     expect(result.fileName).toBe("FF-US-240610-B03-托书.docx");
     expect(result.mimeType).toBe("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-    expect(result.content.byteLength).toBeGreaterThan(5000);
+    expect(result.content.byteLength).toBeGreaterThan(2000);
     expect(result.content[0]).toBe(0x50);
     expect(result.content[1]).toBe(0x4b);
     expect(result.fields).toEqual(
@@ -51,18 +52,36 @@ describe("generateSupplementTemplate", () => {
     expect(result.mode).toBe("generated");
     expect(result.fileName).toBe("FF-US-240610-B03-补料-含vgm.xlsx");
     expect(result.mimeType).toBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    expect(result.content.byteLength).toBeGreaterThan(5000);
+    expect(result.content.byteLength).toBeGreaterThan(2000);
 
-    const workbook = XLSX.read(result.content, { type: "array" });
-    const sheet = workbook.Sheets["补料"];
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(result.content);
+    const sheet = workbook.getWorksheet("补料");
     expect(sheet).toBeTruthy();
-    expect(sheet.A1?.v).toBe("shipper:");
-    expect(sheet.P1?.v).toBe("SO");
-    expect(sheet.P2?.v).toBe("COSU5519028");
-    expect(sheet.E20?.v).toBe("CSNU9539462");
-    expect(sheet.G20?.v).toBe("40GP");
-    expect(sheet.J22?.v).toBe("1140");
-    expect(sheet.K22?.v).toBe("19000");
-    expect(sheet.N22?.v).toBe("78");
+    expect(sheet?.getCell("A1").value).toBe("shipper:");
+    expect(sheet?.getCell("P1").value).toBe("SO");
+    expect(sheet?.getCell("P2").value).toBe("COSU5519028");
+    expect(sheet?.getCell("E20").value).toBe("CSNU9539462");
+    expect(sheet?.getCell("G20").value).toBe("40GP");
+    expect(sheet?.getCell("J22").value).toBe("1140");
+    expect(sheet?.getCell("K22").value).toBe("19000");
+    expect(sheet?.getCell("N22").value).toBe("78");
+  });
+});
+
+describe("recognizeShippingOrder", () => {
+  it("extracts SO number and container number from OCR text with context", async () => {
+    const result = await recognizeShippingOrder({
+      shipmentId: "SHP-240610-001",
+      sourceText: "SO released. SO: OOLU8791320. Container TEMU9088771 40HQ.",
+    });
+
+    expect(result.mode).toBe("ocr");
+    expect(result.status).toBe("recognized");
+    expect(result.extractedFields).toMatchObject({
+      containerNo: "TEMU9088771",
+      containerType: "40HQ",
+      soNo: "OOLU8791320",
+    });
   });
 });

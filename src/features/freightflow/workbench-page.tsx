@@ -69,6 +69,7 @@ import {
   sendBookingEmail,
   runEmailSyncFromApi,
   updateEmailDraftFromApi,
+  uploadShipmentAttachmentFromApi,
   type EmailRecognitionReviewAction,
   type EmailRecognitionQueueItem,
   type EmailConnectionTest,
@@ -141,6 +142,7 @@ export function FreightflowWorkbenchPage() {
   const [statusEditDraft, setStatusEditDraft] = useState<ShipmentStatusEditDraft>(() => buildShipmentStatusEditDraft(shipments[0]));
   const [emailSyncing, setEmailSyncing] = useState(false);
   const [reviewingEmailRecognitionId, setReviewingEmailRecognitionId] = useState<string | null>(null);
+  const [soAttachmentUploading, setSoAttachmentUploading] = useState(false);
   const [contactDraft, setContactDraft] = useState<ContactDraft>({
     email: "",
     label: "",
@@ -864,6 +866,37 @@ export function FreightflowWorkbenchPage() {
     }
   }
 
+  async function handleUploadSoAttachment(file: File) {
+    if (soAttachmentUploading) return;
+
+    setSoAttachmentUploading(true);
+    try {
+      const result = await uploadShipmentAttachmentFromApi({
+        documentType: "so",
+        file,
+        shipmentId: selectedShipment.id,
+      });
+      const recognition = result.data.soRecognition;
+      const fields = recognition
+        ? [recognition.extractedFields.soNo, recognition.extractedFields.containerNo, recognition.extractedFields.containerType]
+            .filter(Boolean)
+            .join(" / ")
+        : "";
+      const statusCopy = result.data.ocr?.status === "recognized" ? "OCR完成" : `OCR ${result.data.ocr?.status ?? "未执行"}`;
+      setToast({
+        tone: "success",
+        message: `附件已保存：${result.data.attachment.originalName}，${statusCopy}${fields ? `，识别 ${fields}` : ""}`,
+      });
+    } catch (error) {
+      setToast({
+        tone: "info",
+        message: error instanceof Error ? error.message : "SO 附件上传失败",
+      });
+    } finally {
+      setSoAttachmentUploading(false);
+    }
+  }
+
   async function handleReviewEmailRecognition(id: string, action: EmailRecognitionReviewAction) {
     if (reviewingEmailRecognitionId) return;
 
@@ -1200,10 +1233,12 @@ export function FreightflowWorkbenchPage() {
               onRunAction={handleAction}
               onRunEmailSync={() => void handleRunEmailSync()}
               onToggleBookingPlan={handleToggleBookingPlan}
+              onUploadSoAttachment={(file) => void handleUploadSoAttachment(file)}
               reviewingEmailRecognitionId={reviewingEmailRecognitionId}
               selectedBookingPlanIds={selectedBookingPlanIds}
               selectedShipment={selectedShipment}
               shipments={shipmentState}
+              soAttachmentUploading={soAttachmentUploading}
             />
           ) : activeBookingSubNav === "柜子队列" ? (
             <>

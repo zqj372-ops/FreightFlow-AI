@@ -287,6 +287,48 @@ export async function runEmailRecognitionSync(messages: RawEmailMessage[] = mock
   };
 }
 
+export async function createRecognitionFromEmailMessage(emailMessageId: string) {
+  const [message, shipments] = await Promise.all([
+    prisma.emailMessage.findUnique({ where: { id: emailMessageId } }),
+    listShipmentsFromDatabase(),
+  ]);
+
+  if (!message) {
+    throw new Error(`Email message ${emailMessageId} not found.`);
+  }
+
+  const rawMessage: RawEmailMessage = {
+    bodyText: message.bodyText,
+    from: message.from,
+    messageId: message.messageId,
+    receivedAt: message.receivedAt.toISOString(),
+    subject: message.subject,
+  };
+  const recognition = classifyEmailMessage(rawMessage);
+  const matchedShipment = matchShipmentForEmail(rawMessage, shipments);
+
+  await prisma.emailMessage.update({
+    data: { syncStatus: EmailMessageSyncStatus.QUEUED },
+    where: { id: emailMessageId },
+  });
+
+  const result = await prisma.emailRecognitionResult.create({
+    data: {
+      confidence: recognition.confidence,
+      emailMessageId: message.id,
+      extractedFields: recognition.extractedFields,
+      matchedShipmentId: matchedShipment?.id ?? null,
+      recognitionType: toDbRecognitionType(recognition.recognitionType),
+      riskFlags: recognition.riskFlags,
+      status: EmailRecognitionStatus.PENDING_REVIEW,
+      summary: recognition.summary,
+    },
+    include: { emailMessage: true },
+  });
+
+  return mapRecognitionRecord(result);
+}
+
 export async function runEmailRecognitionSyncWithFallback() {
   if (!isDatabaseConfigured()) {
     return { data: await runMockEmailRecognitionSync(), source: "mock" as const };

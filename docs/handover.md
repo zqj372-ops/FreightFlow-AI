@@ -1025,3 +1025,38 @@ e466fcf feat: defer SO entry until release recognition
 - 仍需说明:
   - 当前完整链路是在 mock repository / 本地演示模式下可完整操作。
   - 生产可用仍需要接入并 seed PostgreSQL、配置真实 SMTP/IMAP、补真实附件上传/OCR/文件存储、补浏览器 Playwright E2E。
+
+# 2026-06-18 · PostgreSQL / SMTP-IMAP / 附件 OCR / Playwright E2E 集成
+
+- 按用户授权复用 GitHub/开源生态:
+  - 保留并强化 `nodemailer` / `imapflow` 邮件链路。
+  - 新增 `tesseract.js` 作为 OCR provider,`fflate` 生成 XLSX zip,`@playwright/test` 做浏览器 E2E。
+  - 移除生产依赖 `xlsx`,避免 SheetJS high severity 且无修复的 audit 风险。
+- PostgreSQL:
+  - 新增 `docker-compose.yml`,默认启动 `postgres:16-alpine`、数据库 `freightflow_ai`、端口 `5432`。
+  - 新增脚本:`db:up`, `db:reset`, `e2e`, `e2e:headed`。
+  - 新增 `shipment_attachments` Prisma 模型与 migration `20260618183000_shipment_attachments`。
+  - 说明:当前机器无 Docker 命令,未能本机实际启动 PostgreSQL 容器;schema/generate/validate 均通过。
+- SMTP/IMAP:
+  - `POST /api/email-sync/run` 在配置 `DATABASE_URL` 时调用 `runSync`,根据邮箱设置选择真实 IMAP 或 mock pull。
+  - 新增 `createRecognitionFromEmailMessage`,邮件落库后立即创建 `email_recognition_results`。
+  - 未配置数据库时仍走本地 mock recognition fallback。
+- 附件 / 文件存储 / OCR:
+  - 新增 `src/lib/services/storage/attachment-storage-service.ts`,文件落到 `.freightflow/storage` 或 `FREIGHTFLOW_STORAGE_DIR`,无数据库时写本地 index。
+  - 新增 `GET/POST /api/shipments/[id]/attachments` 和 `GET /api/shipments/[id]/attachments/[attachmentId]/download`。
+  - 新增 `src/lib/services/documents/ocr-service.ts`,支持文本文件直接读取、图片走 `tesseract.js`,PDF/Office 文件保存并标记 `unsupported`。
+  - SO 识别从占位升级为 OCR 文本 + 规则抽取,可区分 SO No 与 Container No。
+  - `SO识别中心` 新增上传 OCR 入口。
+- Playwright / 浏览器验证:
+  - 新增 `playwright.config.ts` 与 `e2e/freightflow-workbench.spec.ts`。
+  - E2E 覆盖:首页加载 → SO识别中心 → 上传 SO 文本附件/OCR → 邮件中心 → 同步邮箱。
+  - 使用内置 Browser 做桌面与移动 smoke:页面不空白、无错误覆盖层、console error/warn 为 0,模块切换正常。
+- 安全/依赖:
+  - `npm audit --omit=dev` 已无 high;剩余 5 个 moderate 来自 Next/PostCSS 与 Prisma/@hono 上游,强制修复会降级破坏性大版本,暂不执行。
+- 验证结果:
+  - `npm run prisma:generate` 通过。
+  - `npm run prisma:validate` 通过。
+  - `npm run lint` 通过。
+  - `npm test` 通过,19 个测试文件 / 113 个用例。
+  - `npm run e2e` 通过,1 个 Chromium 测试。
+  - `npm run build` 通过;仍有 Turbopack 对附件下载路由动态文件读取的非阻塞 NFT warning。

@@ -10,7 +10,7 @@ import {
   TextRun,
   WidthType,
 } from "docx";
-import * as XLSX from "xlsx";
+import { strToU8, zipSync } from "fflate";
 
 import type { ShipmentRecord } from "@/lib/mock-data";
 
@@ -22,7 +22,7 @@ export type SoRecognitionInput = {
 };
 
 export type SoRecognitionResult = {
-  mode: "placeholder";
+  mode: "ocr" | "placeholder";
   status: "queued" | "recognized";
   shipmentId: string;
   fileName: string | null;
@@ -114,6 +114,81 @@ function estimateTareWeight(containerType: string) {
   if (/45/.test(containerType)) return 4700;
   if (/40/.test(containerType)) return 3900;
   return 0;
+}
+
+function escapeXml(value: unknown) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("'", "&apos;");
+}
+
+function columnName(index: number) {
+  let current = index + 1;
+  let name = "";
+  while (current > 0) {
+    const remainder = (current - 1) % 26;
+    name = String.fromCharCode(65 + remainder) + name;
+    current = Math.floor((current - 1) / 26);
+  }
+  return name;
+}
+
+function xlsxCell(rowIndex: number, columnIndex: number, value: unknown) {
+  if (value === null || value === undefined || value === "") return "";
+  const cellRef = `${columnName(columnIndex)}${rowIndex + 1}`;
+  return `<c r="${cellRef}" t="inlineStr"><is><t>${escapeXml(value)}</t></is></c>`;
+}
+
+function buildSheetXml(rows: unknown[][], widths: number[], merges: string[]) {
+  const cols = widths
+    .map((width, index) => `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`)
+    .join("");
+  const sheetRows = rows
+    .map((row, rowIndex) => {
+      const cells = row.map((value, columnIndex) => xlsxCell(rowIndex, columnIndex, value)).join("");
+      return `<row r="${rowIndex + 1}">${cells}</row>`;
+    })
+    .join("");
+  const mergeXml = merges.length
+    ? `<mergeCells count="${merges.length}">${merges.map((ref) => `<mergeCell ref="${ref}"/>`).join("")}</mergeCells>`
+    : "";
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <cols>${cols}</cols>
+  <sheetData>${sheetRows}</sheetData>
+  ${mergeXml}
+</worksheet>`;
+}
+
+function buildXlsxBuffer(rows: unknown[][], widths: number[], merges: string[]) {
+  const files: Record<string, Uint8Array> = {
+    "[Content_Types].xml": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`),
+    "_rels/.rels": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`),
+    "xl/workbook.xml": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="补料" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`),
+    "xl/_rels/workbook.xml.rels": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`),
+    "xl/worksheets/sheet1.xml": strToU8(buildSheetXml(rows, widths, merges)),
+  };
+
+  return Buffer.from(zipSync(files));
 }
 
 function buildFields(shipment: RawObject): DocumentField[] {
@@ -232,10 +307,16 @@ export async function generateBookingInstructionDocument(
 
 function parseSourceText(sourceText: string | null | undefined) {
   if (!sourceText) return {};
+  const bookingRefs = sourceText.match(/\b[A-Z]{4}\d{7}\b/g) ?? [];
+  const soNo = sourceText.match(/\bSO(?:\s*No\.?)?\s*[:：]?\s*([A-Z]{4}\d{7})\b/i)?.[1] ?? bookingRefs[0] ?? null;
+  const containerNo =
+    sourceText.match(/\b(?:container|cntr|柜号)\s*[:：]?\s*([A-Z]{4}\d{7})\b/i)?.[1]
+    ?? bookingRefs.find((value) => value !== soNo)
+    ?? null;
 
   return {
-    soNo: sourceText.match(/\b[A-Z]{4}\d{7}\b/)?.[0] ?? null,
-    containerNo: sourceText.match(/\b[A-Z]{4}\d{7}\b/)?.[0] ?? null,
+    soNo,
+    containerNo,
     containerType: sourceText.match(/\b(?:20GP|40GP|40HQ|45HQ)\b/i)?.[0]?.toUpperCase() ?? null,
   };
 }
@@ -243,9 +324,10 @@ function parseSourceText(sourceText: string | null | undefined) {
 export async function recognizeShippingOrder(input: SoRecognitionInput): Promise<SoRecognitionResult> {
   const parsed = parseSourceText(input.sourceText);
   const hasAnyField = Object.values(parsed).some(Boolean);
+  const hasSourceText = Boolean(input.sourceText?.trim());
 
   return {
-    mode: "placeholder",
+    mode: hasSourceText ? "ocr" : "placeholder",
     status: hasAnyField ? "recognized" : "queued",
     shipmentId: input.shipmentId,
     fileName: input.fileName?.trim() || null,
@@ -258,9 +340,9 @@ export async function recognizeShippingOrder(input: SoRecognitionInput): Promise
       containerType: parsed.containerType ?? null,
     },
     confidence: hasAnyField ? 0.35 : 0,
-    warnings: [
-      "SO recognition is a replaceable placeholder; wire OCR/parser provider before production use.",
-    ],
+    warnings: hasSourceText
+      ? ["OCR 已接入；字段抽取仍是规则解析，复杂 SO 版式后续可接 M3/云 OCR 做二次抽取。"]
+      : ["未提供 OCR/sourceText，SO recognition 暂无可解析文本。"],
   };
 }
 
@@ -334,36 +416,11 @@ export async function generateSupplementTemplate(input: SupplementTemplateInput)
     ["", "", "", "", "TOTAL:", "", "", "", "", numericText(valueFromRecord(shipment, "packages")), grossWeight, tareWeight ? String(tareWeight) : "", vgmWeight, numericText(valueFromRecord(shipment, "cbm"))],
   ];
 
-  const workbook = XLSX.utils.book_new();
-  const worksheet = XLSX.utils.aoa_to_sheet(rows);
-  worksheet["!merges"] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 14 } },
-    { s: { r: 6, c: 0 }, e: { r: 6, c: 14 } },
-    { s: { r: 13, c: 0 }, e: { r: 13, c: 14 } },
-    { s: { r: 19, c: 0 }, e: { r: 19, c: 3 } },
-    { s: { r: 19, c: 7 }, e: { r: 19, c: 8 } },
-    { s: { r: 19, c: 9 }, e: { r: 19, c: 14 } },
-  ];
-  worksheet["!cols"] = [
-    { wch: 14 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 18 },
-    { wch: 14 },
-    { wch: 10 },
-    { wch: 14 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 12 },
-    { wch: 10 },
-    { wch: 22 },
-    { wch: 18 },
-  ];
-  XLSX.utils.book_append_sheet(workbook, worksheet, "补料");
-  const content = XLSX.write(workbook, { bookType: "xlsx", type: "buffer" }) as Buffer;
+  const content = buildXlsxBuffer(
+    rows,
+    [14, 10, 10, 10, 18, 14, 10, 14, 10, 10, 10, 10, 12, 10, 22, 18],
+    ["A1:O1", "A7:O7", "A14:O14", "A20:D20", "H20:I20", "J20:O20"],
+  );
 
   return {
     content,

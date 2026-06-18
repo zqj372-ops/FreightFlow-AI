@@ -8,6 +8,7 @@ import {
   ScanSearch,
   Send,
   ShieldCheck,
+  UploadCloud,
 } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -34,10 +35,12 @@ type ModulePanelProps = {
   onRunAction: (action: DetailActionLabel) => void;
   onRunEmailSync: () => void;
   onToggleBookingPlan: (shipmentId: string) => void;
+  onUploadSoAttachment: (file: File) => void;
   reviewingEmailRecognitionId: string | null;
   selectedBookingPlanIds: Set<string>;
   selectedShipment: ShipmentRecord;
   shipments: ShipmentRecord[];
+  soAttachmentUploading: boolean;
 };
 
 type StatItem = {
@@ -188,9 +191,11 @@ function SoRecognitionCenter({
   onReviewEmailRecognition,
   onRunAction,
   onRunEmailSync,
+  onUploadSoAttachment,
   reviewingEmailRecognitionId,
   selectedShipment,
   shipments,
+  soAttachmentUploading,
 }: Pick<
   ModulePanelProps,
   | "emailRecognitions"
@@ -199,9 +204,11 @@ function SoRecognitionCenter({
   | "onReviewEmailRecognition"
   | "onRunAction"
   | "onRunEmailSync"
+  | "onUploadSoAttachment"
   | "reviewingEmailRecognitionId"
   | "selectedShipment"
   | "shipments"
+  | "soAttachmentUploading"
 >) {
   const pendingSoShipments = shipments.filter((shipment) => shipment.soStatus === "待识别");
   const soRecognitions = emailRecognitions.filter((item) =>
@@ -221,6 +228,35 @@ function SoRecognitionCenter({
 
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(380px,460px)]">
         <section className="space-y-2">
+          <div className="rounded-lg border border-cyan-200 bg-cyan-50 px-4 py-3">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-cyan-950">上传 SO / 放舱附件</p>
+                <p className="mt-1 text-xs leading-5 text-cyan-800">
+                  当前柜 {selectedShipment.batchNo} · 支持图片 OCR、文本解析和文件存储
+                </p>
+              </div>
+              <label className={cx(
+                "inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-lg bg-cyan-600 px-3.5 text-sm font-medium text-white transition hover:bg-cyan-700 focus-within:outline-none focus-within:ring-2 focus-within:ring-cyan-500/70",
+                soAttachmentUploading && "pointer-events-none opacity-60",
+              )}>
+                <UploadCloud className="h-4 w-4" />
+                {soAttachmentUploading ? "上传识别中" : "上传 OCR"}
+                <input
+                  className="sr-only"
+                  type="file"
+                  accept="image/*,.txt,.csv,.pdf,.doc,.docx,.xls,.xlsx"
+                  disabled={soAttachmentUploading}
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0];
+                    event.currentTarget.value = "";
+                    if (file) onUploadSoAttachment(file);
+                  }}
+                />
+              </label>
+            </div>
+          </div>
+
           {pendingSoShipments.length === 0 ? (
             <EmptyModuleState label="当前没有待识别 SO。" />
           ) : (

@@ -179,6 +179,7 @@ model Shipment {
   bookingPlan         BookingPlan?
   emailDrafts         EmailDraft[]
   recognitions        EmailRecognitionResult[]
+  attachments         ShipmentAttachment[]
 
   @@index([status])
   @@index([operator])
@@ -383,6 +384,30 @@ model ShipmentEmailRecipient {
 
   @@index([emailLogId, recipientType])
   @@map("shipment_email_recipients")
+}
+
+model ShipmentAttachment {
+  id            String   @id @default(cuid())
+  shipmentId    String   @db.VarChar(64)
+  fileName      String   @db.VarChar(255)
+  originalName  String   @db.VarChar(255)
+  mimeType      String   @db.VarChar(128)
+  byteSize      Int
+  storageKey    String   @unique @db.VarChar(512)
+  checksum      String   @db.VarChar(64)
+  documentType  String   @default("attachment") @db.VarChar(64)
+  ocrStatus     String   @default("not_started") @db.VarChar(32)
+  ocrText       String?  @db.Text
+  ocrConfidence Float?
+  uploadedBy    String?  @db.VarChar(128)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  shipment      Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId, createdAt])
+  @@index([documentType])
+  @@index([ocrStatus])
+  @@map("shipment_attachments")
 }
 
 model AiRequest {

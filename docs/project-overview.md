@@ -112,8 +112,10 @@ freightflow-ai/
 | `npm run prisma:format` | 格式化 Prisma schema |
 | `npm run prisma:migrate:dev` | 本地开发 migration |
 | `npm run prisma:migrate:deploy` | 部署环境 migration |
+| `npm run db:up` | 用 Docker Compose 启动本地 PostgreSQL |
+| `npm run e2e` | Playwright 浏览器 smoke |
 
-当前已有最小测试脚本,无部署脚本。Prisma 脚本已存在,但是否能执行 migration 取决于本地 PostgreSQL / `DATABASE_URL`。
+当前已有测试、Prisma 与本地 PostgreSQL 启动脚本。是否能执行 migration 取决于本机是否安装 Docker 或是否已配置可用 `DATABASE_URL`。
 
 ## 6. 环境变量
 
@@ -127,6 +129,8 @@ freightflow-ai/
 - `IMAP_HOST` / `IMAP_PORT` / `IMAP_SECURE`:收信 IMAP 服务配置。
 - `SMTP_USERNAME` / `SMTP_PASSWORD`:邮箱账号与授权码/密码,同时用于 IMAP/SMTP 登录。
 - `SMTP_FROM_EMAIL` / `SMTP_FROM_NAME` / `SMTP_REPLY_TO`:发件人和回信地址。
+- `FREIGHTFLOW_STORAGE_DIR`:附件本地存储目录;为空时使用 `.freightflow/storage`。
+- `OCR_LANGUAGES`:Tesseract OCR 语言,默认 `eng+chi_sim`。
 
 左侧“设置”里的 OpenClaw 配置窗口会优先写入/读取 `.freightflow/openclaw-config.json`;存在本地配置时优先于上述环境变量。`.freightflow/` 已加入 `.gitignore`,用于保存本机运行配置和 API Key。
 左侧“设置”里的邮箱服务模块会优先写入/读取 `.freightflow/email-config.json`;存在本地配置时优先于上述 SMTP/IMAP 环境变量。使用前需要在邮箱服务商后台开启 IMAP/SMTP 服务并使用授权码。
@@ -146,6 +150,7 @@ freightflow-ai/
 - 邮件识别队列面板(手动同步邮箱、展示待确认识别结果、异常/匹配统计、人工确认后写回 Shipment)
 - SO识别中心(待识别 SO、识别邮件队列、人工复核入口)
 - 补料中心(补料状态汇总、补料 Excel 生成下载、单柜明细入口)
+- SO 附件上传、本地文件存储、文本/图片 OCR、SO 字段规则抽取
 - AMS/ACI/ISF 面板(三类申报进度汇总、单柜推进入口)
 - 邮件中心(待发订舱计划、批量草稿、邮箱设置、邮件识别队列)
 - 异常中心(红色异常、黄色预警、当前柜异常切换、单柜明细入口)
@@ -156,16 +161,16 @@ freightflow-ai/
 - `/api/ai/openclaw`(stub 模式 + 转发模式)
 - 一轮结构整理(workbench 页面下沉、BookingModal / AiCopilotPanel / detail panels 抽离、ActionTile 统一)
 - Vitest 测试基线(纯函数 + OpenClaw route stub/proxy/error 分支 + mock 服务/API 操作链路)
+- Playwright smoke(首页、SO 上传 OCR、邮件中心同步)
 
 ## 8. 已知限制
 
-- **真实数据库尚未接入前端工作台**:Prisma schema 已存在,但主工作台仍由 `mock-data.ts` 驱动,刷新页面即丢失所有前端操作改动。详见 [database.md](./database.md)。
-- **真实数据库尚未启动**:主工作台会优先请求 `/api/shipments` 与 `/api/contacts`;无 PostgreSQL 时 API 回退服务端 mock,前端动作仍保留本地演示状态并提示未持久化。详见 [database.md](./database.md)。
+- **真实数据库需要运行环境**:已提供 `docker-compose.yml`、migration 与 seed;当前机器未安装 Docker,所以 PostgreSQL 容器未在本机实际启动。详见 [database.md](./database.md)。
 - **邮箱真发需要外部开通**:系统已支持 IMAP/SMTP 配置与连接测试,但需要在邮箱服务商后台开启 IMAP/SMTP 并填写授权码。email log 持久化仍依赖 PostgreSQL 中存在对应 shipment。
-- **真实 IMAP 拉信已接入服务骨架**:`POST /api/email-sync/run` 会在配置可用 IMAP 时使用 `ImapPullProvider`,否则使用 `MockEmailPullProvider` 兜底。真实 IMAP 传输失败会返回 5xx,不会静默降级为 mock。后续还需把 M3 分类与附件解析接成生产链路。
-- **附件流仍是 MVP 形态**:托书 DOCX 与补料 XLSX 已可由服务层生成下载,但还没有真实附件上传、文件存储、OCR 原文定位和模板后台维护。
+- **真实 IMAP 拉信已接入**:`POST /api/email-sync/run` 在有数据库时调用 `runSync`,根据配置选择真实 IMAP 或 mock pull,并创建识别结果。真实邮箱账号与授权码仍需外部提供。
+- **附件流仍是本地 MVP 形态**:已支持本地上传、存储、下载、文本/图片 OCR 与 SO 字段规则抽取;PDF rasterize、云对象存储、模板后台维护和 M3 二次抽取仍待补。
 - **没有登录、权限、用户体系**。
-- **测试仍不完整**:已有 Vitest 单测与 mock 服务/API 操作链路验收,但没有覆盖率阈值和浏览器 Playwright E2E。
+- **测试仍不完整**:已有 Vitest 单测、mock 服务/API 操作链路与 Playwright smoke,但没有覆盖率阈值和完整业务浏览器 E2E。
 - **`src/features/freightflow/workbench-page.tsx` 仍较大**,后续可继续拆分看板状态、订舱状态 hook 或动作流 reducer。
 - **Prisma 7 使用 Postgres adapter 初始化**:`src/lib/prisma.ts` 通过 `@prisma/adapter-pg` + `pg` 创建 `PrismaClient`,构建期不会再因缺少 adapter 阻塞;真实数据库不可用时,相关 API 仍需各自 fallback。
 - **开源参考仅做架构借鉴**:已查看 `loadpartner/tms`、`fleetbase/fleetbase`、`AgileShift/cargo_management`、`MustafaYamin/logistics-crm-nextjs` 等项目。因许可证为 AGPL、Other 或未声明许可证,当前没有直接复制外部代码,只参考模块边界和工作流组织方式。

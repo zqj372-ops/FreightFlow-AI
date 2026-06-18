@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: freightflow-ai-postgres
+    environment:
+      POSTGRES_DB: freightflow_ai
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d freightflow_ai"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "5432:5432"
+    volumes:
+      - freightflow_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  freightflow_postgres_data:
