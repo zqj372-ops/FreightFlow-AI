@@ -36,10 +36,14 @@ npm run dev
 - `src/app/layout.tsx`: 页面 metadata 与字体
 - `src/app/api`: Next API 路由，覆盖 AI、shipments、contacts、settings、documents、emails
 - `src/features/freightflow`: 工作台页面、modal、AI panel、详情面板和页面 helper
+- `src/features/booking`: SO 上传与识别结果面板
 - `src/components/workbench-shell.tsx`: 左侧导航、头部和订舱任务队列
+- `src/lib/booking`: 订舱邮件草稿、OpenClaw JSON 草稿增强和发送校验
+- `src/lib/email`: IMAP 回邮解析、附件检测和 Shipment 匹配
 - `src/lib/freightflow-domain.ts`: 共享业务类型与 shipment 动作状态机
 - `src/lib/freightflow-data.ts`: Prisma ↔ UI 数据映射、API 输入校验和持久化动作
 - `src/lib/mock-data.ts`: Shipment 样例数据、状态、提醒和统计逻辑
+- `src/lib/so`: SO OCR 边界、OpenClaw JSON 抽取增强、字段校验与回写映射
 - `src/lib/services`: 邮件与文档服务边界
 - `prisma/schema.prisma`: PostgreSQL 数据模型
 - `docs/booking-mvp.md`: 当前订舱 + SO OCR MVP 范围
@@ -47,10 +51,10 @@ npm run dev
 
 ## 下一步建议
 
-1. Agent 2：新增 AI 订舱邮件草稿 API、SMTP 发送确认、IMAP 回邮同步与 SO 附件检测。
-2. Agent 3：新增 SO 上传、OCR provider 边界、结构化抽取和高置信度字段回写。
-3. Integration：订舱邮件发送 → 回邮发现 SO → OCR / 抽取 → 回写 Shipment。
-4. 补 API route 单测和一条关键 E2E。
+1. 启动真实 PostgreSQL，跑 `prisma migrate deploy` + seed，验证刷新后状态和日志持久化。
+2. 填真实 IMAP/SMTP 配置并保存测试，验证真实订舱邮件和回邮附件同步。
+3. 接真实 OCR provider，替换 `src/lib/so/so-ocr.ts` 的 not-configured 分支。
+4. 用真实 OpenClaw endpoint 回归订舱 JSON 草稿和 SO JSON 抽取增强。
 
 ## OpenClaw 接口占位
 
@@ -63,4 +67,4 @@ npm run dev
 - `OPENCLAW_API_URL`: 你的 OpenClaw 服务地址
 - `OPENCLAW_API_KEY`: 可选，Bearer Token
 
-未配置时，接口会返回本地 stub 文本，方便先把前端工作流做通。
+未配置时，接口会返回本地 stub 文本，订舱邮件和 SO 抽取会回退到本地确定性逻辑。

@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       data: {
         action: actionResult,
-        actionWarning,
+        actionWarning: actionWarning ?? result.persistenceWarning,
         email: result,
         validation,
       },

@@ -33,13 +33,15 @@ AI 生成订舱邮件
 ### 1.2 SMTP 发送 + IMAP 回邮同步(P0)
 
 - 状态:已新增 `src/lib/email/**` 附件检测、邮件解析、Shipment 匹配、IMAP 抓取边界。
+- 状态:IMAP 同步会读取正文片段和 bodyStructure 附件文件名,可识别真实 SO 附件名。
 - 状态:已新增 `POST /api/booking/send`,要求 `confirmed === true`。
 - 状态:已新增 `POST /api/booking/sync-replies`,可拉取回邮或接收 sample messages 并识别 SO 附件。
-- 状态:confirmed send 会写 `ShipmentEmailLog` 与 `ShipmentActionLog`;数据库不可用时 UI 保留 demo fallback。
+- 状态:confirmed send 会写 `ShipmentEmailLog` 与 `ShipmentActionLog`;邮件已发但日志失败时返回 warning,避免误重发。
 
 ### 1.3 SO OCR 与结构化抽取(P0)
 
 - 状态:已新增 `src/lib/so/**` OCR 边界、extractor、validator、field mapper。
+- 状态:已新增 OpenClaw JSON 增强,endpoint 可用时可用大模型补强 SO 字段抽取。
 - 状态:已新增 `POST /api/so/upload`、`/api/so/ocr`、`/api/so/extract`、`/api/so/apply-to-shipment`。
 - 状态:OCR 未配置时返回明确 not_configured;当前 MVP 支持文本/文本文件直通识别。
 - 状态:低置信度字段不会自动覆盖 Shipment。

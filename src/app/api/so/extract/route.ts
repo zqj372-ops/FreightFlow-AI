@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 
 import { isPrismaUnavailable } from "@/lib/freightflow-data";
 import { prisma } from "@/lib/prisma";
+import { enhanceSoExtractionWithOpenClaw } from "@/lib/so/so-ai-extractor";
 import { extractSoFields } from "@/lib/so/so-extractor";
 import { validateSoExtraction } from "@/lib/so/so-validator";
 
@@ -35,7 +36,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "rawText is required before SO extraction." }, { status: 400 });
   }
 
-  const extraction = extractSoFields(rawText);
+  const localExtraction = extractSoFields(rawText);
+  const extraction = await enhanceSoExtractionWithOpenClaw(rawText, localExtraction);
   const validation = validateSoExtraction(extraction);
 
   if (body.soDocumentId && !body.soDocumentId.startsWith("local-")) {

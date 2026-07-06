@@ -127,7 +127,10 @@ Low-confidence fields must not overwrite Shipment automatically.
 Implemented in the current MVP pass:
 
 - Booking draft builder, prompt builder, validator, draft API, confirmed send API, and reply sync API.
+- OpenClaw JSON enhancement for booking drafts and SO extraction, with deterministic fallback when OpenClaw is unavailable.
 - SO upload, OCR boundary, deterministic extractor, validator, field mapper, and Shipment apply API.
+- IMAP reply sync now reads body snippets and attachment filenames from message body structure.
+- Confirmed email send returns a warning instead of a hard failure when email is already sent but log persistence fails.
 - Prisma migration for booking drafts, SO documents, extracted fields, and email sync logs.
 - Workbench controls for AI booking draft generation, SO upload / sample text extraction, reply sync, and Shipment write-back.
 - Vitest coverage for booking validation, SO attachment detection, reply matching, SO extraction, and SO field mapping.

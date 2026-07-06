@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 
+import { generateBookingDraftWithOpenClaw } from "@/lib/booking/booking-ai";
 import { buildBookingEmailContext, buildDeterministicBookingDraft, type BookingEmailOverrides } from "@/lib/booking/booking-email-builder";
 import { buildBookingEmailPrompt } from "@/lib/booking/booking-prompt";
 import { validateBookingDraft } from "@/lib/booking/booking-validator";
@@ -38,7 +39,8 @@ export async function POST(request: NextRequest) {
     if (!shipment) return NextResponse.json({ error: "Shipment not found." }, { status: 404 });
 
     const context = buildBookingEmailContext(shipment, body);
-    const draft = buildDeterministicBookingDraft(context);
+    const aiDraft = await generateBookingDraftWithOpenClaw(context);
+    const draft = aiDraft ?? buildDeterministicBookingDraft(context);
     const emailConfig = await readEmailConfig();
     const validation = validateBookingDraft({ context, draft, emailConfig });
     const prompt = buildBookingEmailPrompt(context);
@@ -70,7 +72,7 @@ export async function POST(request: NextRequest) {
         draftId,
         persisted: Boolean(draftId),
         prompt,
-        source: "local",
+        source: aiDraft ? "openclaw" : "local",
         warning,
       },
     });

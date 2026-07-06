@@ -6,6 +6,9 @@
 - 已完成 SO MVP pass: `POST /api/so/upload`、`/api/so/ocr`、`/api/so/extract`、`/api/so/apply-to-shipment`。
 - 已新增 Prisma migration: booking drafts、SO documents、SO extracted fields、email sync logs。
 - 已在工作台接入 AI 生成订舱邮件、SO 上传/示例识别、回邮同步、识别结果回写 Shipment。
+- 已接入 OpenClaw JSON 增强:订舱草稿和 SO 抽取在 endpoint 可用时优先用大模型,失败自动回退本地逻辑。
+- 已补强 IMAP 同步:读取正文片段和 bodyStructure 附件文件名,可检测真实回邮里的 SO 附件。
+- 已补强邮件发送返回:邮件已发但日志持久化失败时返回 warning,避免操作员误判后重复发送。
 - 当前 OCR 是可替换边界:文本/文本文件可直通识别,PDF/图片需要后续接真实 OCR provider。
 
 ## 1. 已完成功能
