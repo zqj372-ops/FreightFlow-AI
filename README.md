@@ -56,6 +56,14 @@ npm run dev
 3. 接真实 OCR provider，替换 `src/lib/so/so-ocr.ts` 的 not-configured 分支。
 4. 用真实 OpenClaw endpoint 回归订舱 JSON 草稿和 SO JSON 抽取增强。
 
+外部资源填好后跑:
+
+```bash
+npm run verify:external
+```
+
+OCR provider 需要兼容 JSON contract:请求体包含 `fileName / mimeType / fileBase64`,响应包含 `rawText` 或 `text`。
+
 ## OpenClaw 接口占位
 
 当前前端 AI 面板会调用：

@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { runSoOcr } from "@/lib/so/so-ocr";
 
 type OcrBody = {
+  fileBase64?: string;
+  fileDataUrl?: string;
   fileName?: string;
   mimeType?: string;
   soDocumentId?: string;

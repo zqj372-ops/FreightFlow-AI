@@ -137,4 +137,5 @@ Implemented in the current MVP pass:
 
 Known shortcut:
 
-- OCR currently uses supplied text or text files. PDF/image OCR returns a clear not-configured path until an OCR provider is wired.
+- OCR uses supplied text/text files directly. PDF/image OCR calls `OCR_API_URL` when configured and returns a clear not-configured path otherwise.
+- Final external verification runs through `npm run verify:external` after `DATABASE_URL`, IMAP/SMTP, and `OCR_TEST_FILE` are configured.

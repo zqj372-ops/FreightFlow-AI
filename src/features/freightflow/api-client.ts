@@ -325,11 +325,13 @@ export async function uploadSoDocument({
 }
 
 export async function runSoOcr({
+  fileBase64,
   fileName,
   mimeType,
   soDocumentId,
   sourceText,
 }: {
+  fileBase64?: string;
   fileName: string;
   mimeType: string;
   soDocumentId?: string;
@@ -338,7 +340,7 @@ export async function runSoOcr({
   const response = await fetch("/api/so/ocr", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ fileName, mimeType, soDocumentId, sourceText }),
+    body: JSON.stringify({ fileBase64, fileName, mimeType, soDocumentId, sourceText }),
   });
   const payload = await readJson<SoOcrResult>(response);
 

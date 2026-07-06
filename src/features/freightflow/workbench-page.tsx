@@ -129,6 +129,7 @@ export function FreightflowWorkbenchPage() {
   const [ccInput, setCcInput] = useState("");
   const [bookingSending, setBookingSending] = useState(false);
   const [soDraft, setSoDraft] = useState<SoUploadDraft>(() => ({
+    fileBase64: undefined,
     fileName: `${shipments[0]?.batchNo ?? "shipment"}-so.txt`,
     mimeType: "text/plain",
     sourceText: "",
@@ -518,6 +519,7 @@ export function FreightflowWorkbenchPage() {
     if (!nextShipment) return;
 
     setSoDraft({
+      fileBase64: undefined,
       fileName: `${nextShipment.batchNo}-so.txt`,
       mimeType: "text/plain",
       sourceText: "",
@@ -802,6 +804,7 @@ export function FreightflowWorkbenchPage() {
       setSoStatusText("OCR 识别中...");
 
       const ocr = await runSoOcr({
+        fileBase64: soDraft.fileBase64,
         fileName: document.fileName,
         mimeType: document.mimeType,
         soDocumentId: document.id,
@@ -891,6 +894,7 @@ export function FreightflowWorkbenchPage() {
 
   function handleLoadSampleSo() {
     setSoDraft({
+      fileBase64: undefined,
       fileName: `${selectedShipment.batchNo}-so.txt`,
       mimeType: "text/plain",
       sourceText: buildSampleSoText(selectedShipment),

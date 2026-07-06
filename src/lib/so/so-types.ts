@@ -44,8 +44,9 @@ export type SoExtractionResult = {
 
 export type SoOcrResult = {
   message: string;
+  provider?: string;
   rawText: string;
-  status: "OCR_DONE" | "not_configured";
+  status: "FAILED" | "OCR_DONE" | "not_configured";
 };
 
 export type SoApplyResult = {

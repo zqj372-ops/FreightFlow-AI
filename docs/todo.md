@@ -43,7 +43,7 @@ AI 生成订舱邮件
 - 状态:已新增 `src/lib/so/**` OCR 边界、extractor、validator、field mapper。
 - 状态:已新增 OpenClaw JSON 增强,endpoint 可用时可用大模型补强 SO 字段抽取。
 - 状态:已新增 `POST /api/so/upload`、`/api/so/ocr`、`/api/so/extract`、`/api/so/apply-to-shipment`。
-- 状态:OCR 未配置时返回明确 not_configured;当前 MVP 支持文本/文本文件直通识别。
+- 状态:OCR 未配置时返回明确 not_configured;当前 MVP 支持文本/文本文件直通识别,PDF/图片会调用 `OCR_API_URL`。
 - 状态:低置信度字段不会自动覆盖 Shipment。
 
 ### 1.4 Shipment 回写(P0)
@@ -177,6 +177,12 @@ AI 生成订舱邮件
 
 - 将 `npm test && npm run lint && npm run build` 接入 CI。
 - 验收:任一环节失败时阻止合并 / 发布。
+
+### 4.5 外部资源验收(P0)
+
+- 状态:已新增 `npm run verify:external`。
+- 验收:配置 `DATABASE_URL`、真实 IMAP/SMTP、`OCR_API_URL`、`OCR_TEST_FILE` 后,脚本必须全部 PASS。
+- 注意:OCR provider 需兼容 FreightFlow JSON contract:接收 `fileName / mimeType / fileBase64`,返回 `rawText` 或 `text`。
 
 ## 6. 工程基线(P2)
 
