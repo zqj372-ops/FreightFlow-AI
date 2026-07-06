@@ -19,6 +19,16 @@ export type ShipmentStatus =
   | "已完成"
   | "异常处理中";
 
+export type BookingStatus =
+  | "订舱草稿"
+  | "已发送订舱"
+  | "等待 SO"
+  | "SO 已收到"
+  | "SO 复核中"
+  | "已放舱"
+  | "待补料"
+  | "失败";
+
 export type AlertLevel = "red" | "yellow" | "green";
 
 export type ShipmentRecord = {
@@ -39,6 +49,7 @@ export type ShipmentRecord = {
   pickupLocation: string;
   returnLocation: string;
   status: ShipmentStatus;
+  bookingStatus: BookingStatus;
   operator: string;
   followUpCount: number;
   lastEmailTime: string;
@@ -109,6 +120,7 @@ export const shipments: ShipmentRecord[] = [
     pickupLocation: "Yantian Depot 3",
     returnLocation: "Yantian Terminal 7",
     status: "已催放舱",
+    bookingStatus: "等待 SO",
     operator: "Ava",
     followUpCount: 2,
     lastEmailTime: "2026-06-10 13:25",
@@ -141,6 +153,7 @@ export const shipments: ShipmentRecord[] = [
     pickupLocation: "Ningbo CY 5",
     returnLocation: "Ningbo Phase II",
     status: "待补料",
+    bookingStatus: "待补料",
     operator: "Leo",
     followUpCount: 0,
     lastEmailTime: "2026-06-10 09:40",
@@ -173,6 +186,7 @@ export const shipments: ShipmentRecord[] = [
     pickupLocation: "Waigaoqiao 4",
     returnLocation: "Waigaoqiao 5",
     status: "已发送补料",
+    bookingStatus: "待补料",
     operator: "Ava",
     followUpCount: 1,
     lastEmailTime: "2026-06-10 15:10",
@@ -205,6 +219,7 @@ export const shipments: ShipmentRecord[] = [
     pickupLocation: "Qingdao Depot 1",
     returnLocation: "Qingdao Qianwan",
     status: "已开船",
+    bookingStatus: "待补料",
     operator: "Nina",
     followUpCount: 0,
     lastEmailTime: "2026-06-09 17:20",
@@ -237,6 +252,7 @@ export const shipments: ShipmentRecord[] = [
     pickupLocation: "Xiamen CY 2",
     returnLocation: "Xiamen Haitian",
     status: "异常处理中",
+    bookingStatus: "SO 复核中",
     operator: "Leo",
     followUpCount: 1,
     lastEmailTime: "2026-06-10 12:00",
@@ -269,6 +285,7 @@ export const shipments: ShipmentRecord[] = [
     pickupLocation: "Shekou CY 8",
     returnLocation: "Shekou Phase III",
     status: "等待放舱",
+    bookingStatus: "等待 SO",
     operator: "Nina",
     followUpCount: 0,
     lastEmailTime: "2026-06-10 14:05",

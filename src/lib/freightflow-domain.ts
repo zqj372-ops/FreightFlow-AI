@@ -28,6 +28,7 @@ export type ShipmentActionRequest = {
   cc?: string[];
   exceptionMessage?: string;
   skipEmailLog?: boolean;
+  soStage?: "received" | "reviewing" | "applied";
   source?: "UI" | "AI" | "SYSTEM";
   subject?: string;
   to?: string[];
@@ -62,6 +63,7 @@ export function applyShipmentAction(
       return {
         record: {
           ...record,
+          bookingStatus: "已发送订舱" as const,
           lastEmailTime: actionTime,
           mailStatus: "已发送" as const,
           status: record.mailStatus === "未发送" ? ("已发送订舱" as const) : record.status,
@@ -75,6 +77,10 @@ export function applyShipmentAction(
           followUpCount: record.followUpCount + 1,
           lastEmailTime: actionTime,
           mailStatus: "跟进中" as const,
+          bookingStatus:
+            record.bookingStatus === "已发送订舱" || record.bookingStatus === "等待 SO"
+              ? ("等待 SO" as const)
+              : record.bookingStatus,
           reminderFlags: Array.from(new Set(["已手动催单", ...record.reminderFlags])),
           status:
             record.status === "等待放舱" || record.status === "已发送订舱"
@@ -87,6 +93,7 @@ export function applyShipmentAction(
       return {
         record: {
           ...record,
+          bookingStatus: "待补料" as const,
           documentStatus: "已发送" as const,
           lastEmailTime: actionTime,
           status: record.status === "待补料" ? ("已发送补料" as const) : record.status,
@@ -94,16 +101,43 @@ export function applyShipmentAction(
         summary: "补料文件状态已推进",
       };
     case "SO 识别":
+      if (input.soStage === "received") {
+        return {
+          record: {
+            ...record,
+            bookingStatus: "SO 已收到" as const,
+            soStatus: "待识别" as const,
+            status:
+              record.status === "已发送订舱" || record.status === "已催放舱"
+                ? ("等待放舱" as const)
+                : record.status,
+          },
+          summary: "SO 已收到，等待 OCR 识别与字段抽取",
+        };
+      }
+
+      if (input.soStage === "reviewing") {
+        return {
+          record: {
+            ...record,
+            bookingStatus: "SO 复核中" as const,
+            soStatus: "已识别" as const,
+          },
+          summary: "SO 已识别，进入复核流程",
+        };
+      }
+
       return {
         record: {
           ...record,
+          bookingStatus: "已放舱" as const,
           soStatus: "已识别" as const,
           status:
-            record.status === "已催放舱" || record.status === "等待放舱"
+            record.status === "已发送订舱" || record.status === "已催放舱" || record.status === "等待放舱"
               ? ("已放舱" as const)
               : record.status,
         },
-        summary: "SO 识别状态已更新",
+        summary: "SO 已回写 Shipment，订舱流程推进为已放舱",
       };
     case "AMS/ACI/ISF":
       return {
@@ -125,6 +159,7 @@ export function applyShipmentAction(
         record: {
           ...record,
           exceptions: nextIsException ? Array.from(new Set([message, ...record.exceptions])) : [],
+          bookingStatus: nextIsException ? ("失败" as const) : ("待补料" as const),
           status: nextIsException ? ("异常处理中" as const) : ("待补料" as const),
         },
         summary: nextIsException ? `已标记异常：${message}` : "已清空异常并恢复待补料",

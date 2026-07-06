@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   listShipmentEmailLogs,
   parseShipmentEmailInput,
+  persistBookingEmailSend,
   sendShipmentEmail,
 } from "@/lib/services/email/email-service";
 
@@ -44,11 +45,24 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
   try {
     const input = parseShipmentEmailInput(shipmentId, body);
-    const result = await sendShipmentEmail(input);
+    const result = await sendShipmentEmail(input, { persistEmailLog: false });
+    let persistence = null;
+    let persistenceWarning: string | undefined;
+
+    try {
+      persistence = await persistBookingEmailSend(input, result.providerMessage.sentAt, {});
+    } catch (error) {
+      persistenceWarning =
+        error instanceof Error
+          ? `Email was sent, but shipment email outcome was not fully persisted: ${error.message}`
+          : "Email was sent, but shipment email outcome was not fully persisted.";
+    }
 
     return NextResponse.json({
       shipmentId,
       ...result,
+      persistence,
+      persistenceWarning,
     });
   } catch (error) {
     return NextResponse.json(

@@ -28,6 +28,17 @@ enum ShipmentStatus {
   EXCEPTION_PROCESSING @map("异常处理中")
 }
 
+enum BookingStatus {
+  BOOKING_DRAFT     @map("订舱草稿")
+  BOOKING_SENT      @map("已发送订舱")
+  WAITING_SO        @map("等待 SO")
+  SO_RECEIVED       @map("SO 已收到")
+  SO_REVIEWING      @map("SO 复核中")
+  RELEASED          @map("已放舱")
+  PENDING_DOCUMENTS @map("待补料")
+  FAILED            @map("失败")
+}
+
 enum AlertLevel {
   RED    @map("red")
   YELLOW @map("yellow")
@@ -72,6 +83,10 @@ enum ShipmentActionType {
   SO_RECOGNITION   @map("SO 识别")
   CUSTOMS_PROGRESS @map("AMS/ACI/ISF")
   EXCEPTION_MARK   @map("异常标记")
+  SHIPMENT_CREATED @map("新建 Shipment")
+  SHIPMENT_UPDATED @map("更新 Shipment")
+  SO_RECEIVED      @map("SO 已收到")
+  SO_APPLIED       @map("SO 已回写")
 }
 
 enum ActionSource {
@@ -116,6 +131,15 @@ enum SoOcrStatus {
   FAILED
 }
 
+enum SoDocumentStatus {
+  RECEIVED
+  EXTRACTED
+  NEED_REVIEW
+  REVIEWED
+  APPLIED
+  FAILED
+}
+
 enum EmailSyncStatus {
   RUNNING
   SUCCESS
@@ -140,6 +164,7 @@ model Shipment {
   pickupLocation      String                    @db.VarChar(128)
   returnLocation      String                    @db.VarChar(128)
   status              ShipmentStatus
+  bookingStatus       BookingStatus             @default(BOOKING_DRAFT)
   operator            String                    @db.VarChar(128)
   followUpCount       Int                       @default(0)
   lastEmailTime       DateTime?
@@ -158,10 +183,12 @@ model Shipment {
   reminderFlags       ShipmentReminderFlag[]
   actionLogs          ShipmentActionLog[]
   emailLogs           ShipmentEmailLog[]
+  emailMessages       EmailMessage[]
   bookingEmailDrafts  BookingEmailDraft[]
   soDocuments         SoDocument[]
 
   @@index([status])
+  @@index([bookingStatus])
   @@index([operator])
   @@index([carrier])
   @@index([destinationPort])
@@ -193,6 +220,7 @@ model SoDocument {
   storagePath     String             @db.Text
   source          SoDocumentSource
   ocrStatus       SoOcrStatus        @default(PENDING)
+  status          SoDocumentStatus   @default(RECEIVED)
   rawText         String?            @db.Text
   extractedJson   Json?
   confidence      Float?
@@ -203,6 +231,7 @@ model SoDocument {
 
   @@index([shipmentId])
   @@index([ocrStatus])
+  @@index([status])
   @@map("so_documents")
 }
 
@@ -233,6 +262,33 @@ model EmailSyncLog {
 
   @@index([startedAt])
   @@map("email_sync_logs")
+}
+
+model EmailMessage {
+  id              String    @id @default(cuid())
+  shipmentId      String?   @db.VarChar(64)
+  mailbox         String    @db.VarChar(255)
+  messageId       String    @db.VarChar(512)
+  threadId        String?   @db.VarChar(512)
+  inReplyTo       String?   @db.VarChar(512)
+  references      Json?
+  subject         String    @db.VarChar(255)
+  from            String    @db.VarChar(255)
+  to              Json?
+  cc              Json?
+  body            String    @db.Text
+  receivedAt      DateTime
+  attachments     Json?
+  hasSoAttachment Boolean   @default(false)
+  matchScore      Int?
+  createdAt       DateTime  @default(now())
+  shipment        Shipment? @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+
+  @@unique([mailbox, messageId])
+  @@index([shipmentId, receivedAt])
+  @@index([threadId])
+  @@index([receivedAt])
+  @@map("email_messages")
 }
 
 model ShipmentDocumentProgress {

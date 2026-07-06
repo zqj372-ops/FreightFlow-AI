@@ -1,6 +1,12 @@
-import { EmailRecipientType } from "@prisma/client";
+import { ActionSource, EmailRecipientType, Prisma, ShipmentActionType } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
+import { applyShipmentAction } from "@/lib/freightflow-domain";
+import {
+  shipmentInclude,
+  shipmentUpdateData,
+  toShipmentRecord,
+} from "@/lib/freightflow-data";
 
 import { createEmailProvider } from "./mock-provider";
 import type {
@@ -17,9 +23,18 @@ type RawSendEmailInput = {
   subject?: unknown;
   body?: unknown;
   attachmentName?: unknown;
+  draftId?: unknown;
   to?: unknown;
   cc?: unknown;
   recipients?: unknown;
+};
+
+type SendShipmentEmailOptions = {
+  persistEmailLog?: boolean;
+};
+
+type PersistBookingEmailSendOptions = {
+  draftId?: string | null;
 };
 
 function normalizeEmail(value: unknown) {
@@ -69,6 +84,10 @@ function toPrismaRecipientType(type: EmailRecipientKind) {
 
 function fromPrismaRecipientType(type: EmailRecipientType): EmailRecipientKind {
   return type === EmailRecipientType.CC ? "cc" : "to";
+}
+
+function jsonValue(value: unknown): Prisma.InputJsonValue {
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 }
 
 function mapEmailLog(log: {
@@ -146,19 +165,165 @@ export async function saveShipmentEmailLog(input: SendEmailInput, sentAt: Date |
   return mapEmailLog(emailLog);
 }
 
-export async function sendShipmentEmail(input: SendEmailInput): Promise<SendShipmentEmailResult> {
+async function markMatchingDraftSent(
+  tx: Prisma.TransactionClient,
+  input: SendEmailInput,
+  draftId?: string | null,
+) {
+  const select = { id: true, status: true } as const;
+  const explicitDraft = draftId
+    ? await tx.bookingEmailDraft.findFirst({
+        where: {
+          id: draftId,
+          shipmentId: input.shipmentId,
+        },
+        select,
+      })
+    : null;
+  const matchingDraft =
+    explicitDraft ??
+    (await tx.bookingEmailDraft.findFirst({
+      where: {
+        shipmentId: input.shipmentId,
+        status: { in: ["DRAFT", "APPROVED", "FAILED"] },
+        OR: [
+          { subject: input.subject, body: input.body },
+          { subject: input.subject },
+        ],
+      },
+      orderBy: { updatedAt: "desc" },
+      select,
+    }));
+
+  if (!matchingDraft) return null;
+
+  return tx.bookingEmailDraft.update({
+    where: { id: matchingDraft.id },
+    data: { status: "SENT" },
+    select,
+  });
+}
+
+export async function markBookingDraftFailed({
+  draftId,
+  shipmentId,
+  subject,
+}: {
+  draftId?: string | null;
+  shipmentId: string;
+  subject?: string;
+}) {
+  const matchingDraft = draftId
+    ? await prisma.bookingEmailDraft.findFirst({
+        where: { id: draftId, shipmentId },
+        select: { id: true },
+      })
+    : subject
+      ? await prisma.bookingEmailDraft.findFirst({
+          where: {
+            shipmentId,
+            subject,
+            status: { in: ["DRAFT", "APPROVED"] },
+          },
+          orderBy: { updatedAt: "desc" },
+          select: { id: true },
+        })
+      : null;
+
+  if (!matchingDraft) return null;
+
+  return prisma.bookingEmailDraft.update({
+    where: { id: matchingDraft.id },
+    data: { status: "FAILED" },
+    select: { id: true, status: true },
+  });
+}
+
+export async function persistBookingEmailSend(
+  input: SendEmailInput,
+  sentAt: Date,
+  options: PersistBookingEmailSendOptions = {},
+) {
+  return prisma.$transaction(async (tx) => {
+    const before = await tx.shipment.findUnique({
+      where: { id: input.shipmentId },
+      include: shipmentInclude,
+    });
+
+    if (!before) throw new Error("Shipment not found.");
+
+    const beforeRecord = toShipmentRecord(before);
+    const to = input.recipients.filter((recipient) => recipient.type === "to").map((recipient) => recipient.email);
+    const cc = input.recipients.filter((recipient) => recipient.type === "cc").map((recipient) => recipient.email);
+    const { record: afterRecord, summary } = applyShipmentAction(beforeRecord, {
+      action: "订舱邮件",
+      body: input.body,
+      cc,
+      source: "SYSTEM",
+      subject: input.subject,
+      to,
+    }, sentAt);
+
+    const after = await tx.shipment.update({
+      where: { id: input.shipmentId },
+      data: shipmentUpdateData(afterRecord),
+      include: shipmentInclude,
+    });
+    const draft = await markMatchingDraftSent(tx, input, options.draftId);
+    const emailLog = await tx.shipmentEmailLog.create({
+      data: {
+        shipmentId: input.shipmentId,
+        subject: input.subject,
+        body: input.body,
+        attachmentName: input.attachmentName ?? null,
+        sentAt,
+        recipients: {
+          create: input.recipients.map((recipient) => ({
+            email: recipient.email,
+            recipientType: toPrismaRecipientType(recipient.type),
+          })),
+        },
+      },
+      include: { recipients: true },
+    });
+    const actionLog = await tx.shipmentActionLog.create({
+      data: {
+        shipmentId: input.shipmentId,
+        actionType: ShipmentActionType.BOOKING_EMAIL,
+        source: ActionSource.SYSTEM,
+        summary,
+        beforeSnapshot: jsonValue(beforeRecord),
+        afterSnapshot: jsonValue(afterRecord),
+      },
+    });
+
+    return {
+      actionLog,
+      draft,
+      emailLog: mapEmailLog(emailLog),
+      shipment: toShipmentRecord(after),
+    };
+  });
+}
+
+export async function sendShipmentEmail(
+  input: SendEmailInput,
+  options: SendShipmentEmailOptions = {},
+): Promise<SendShipmentEmailResult> {
   const provider = await createEmailProvider();
   const providerMessage = await provider.send(input);
   let emailLog: PersistedEmailLog | null = null;
   let persistenceWarning: string | undefined;
 
-  try {
-    emailLog = await saveShipmentEmailLog(input, providerMessage.sentAt);
-  } catch (error) {
-    persistenceWarning =
-      error instanceof Error
-        ? `Email was sent, but ShipmentEmailLog was not persisted: ${error.message}`
-        : "Email was sent, but ShipmentEmailLog was not persisted.";
+  if (options.persistEmailLog !== false) {
+    try {
+      emailLog = await saveShipmentEmailLog(input, providerMessage.sentAt);
+    } catch (error) {
+      persistenceWarning =
+        error instanceof Error
+          ? `Email was sent, but ShipmentEmailLog was not persisted: ${error.message}`
+          : "Email was sent, but ShipmentEmailLog was not persisted.";
+    }
   }
 
   return {
