@@ -21,11 +21,11 @@ Create or select Shipment
 
 Build only these five capabilities first:
 
-1. Create or edit booking Shipment tasks.
-2. Generate AI booking email drafts.
-3. Send confirmed booking emails through SMTP.
-4. Sync replies through IMAP and detect SO attachments.
-5. OCR / AI extract SO fields and update Shipment.
+1. Create or edit booking Shipment tasks. Done for the current workbench scope.
+2. Generate AI booking email drafts. Done through `POST /api/booking/draft`.
+3. Send confirmed booking emails through SMTP. Done through `POST /api/booking/send`, with local demo fallback in the UI when SMTP is disabled.
+4. Sync replies through IMAP and detect SO attachments. Done through `POST /api/booking/sync-replies`.
+5. OCR / AI extract SO fields and update Shipment. Done through `POST /api/so/*` with a replaceable OCR boundary.
 
 ## Keep
 
@@ -122,9 +122,16 @@ Each field should carry:
 
 Low-confidence fields must not overwrite Shipment automatically.
 
-## Next Execution Order
+## Current Status
 
-1. Agent 1: reduce UI scope and docs.
-2. Agent 2: booking email automation APIs and libraries.
-3. Agent 3: SO OCR and structured extraction.
-4. Integration pass: email sent → reply sync → SO detected → OCR/extract → Shipment update.
+Implemented in the current MVP pass:
+
+- Booking draft builder, prompt builder, validator, draft API, confirmed send API, and reply sync API.
+- SO upload, OCR boundary, deterministic extractor, validator, field mapper, and Shipment apply API.
+- Prisma migration for booking drafts, SO documents, extracted fields, and email sync logs.
+- Workbench controls for AI booking draft generation, SO upload / sample text extraction, reply sync, and Shipment write-back.
+- Vitest coverage for booking validation, SO attachment detection, reply matching, SO extraction, and SO field mapping.
+
+Known shortcut:
+
+- OCR currently uses supplied text or text files. PDF/image OCR returns a clear not-configured path until an OCR provider is wired.

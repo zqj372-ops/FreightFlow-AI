@@ -47,20 +47,31 @@ import {
   loadEmailSettings,
   loadOpenClawSettings,
   loadShipmentsFromApi,
+  applySoExtractionToShipment,
+  extractSoDocument,
+  generateBookingDraft,
   persistContact,
   persistShipmentAction,
+  runSoOcr,
   saveEmailSettings,
   saveOpenClawSettings,
+  sendConfirmedBookingEmail,
   sendBookingEmail,
+  syncBookingReplies,
+  uploadSoDocument,
+  type SoValidationResult,
   type EmailConnectionTest,
   type PublicEmailConfig,
   type OpenClawConnectionTest,
   type PublicOpenClawConfig,
 } from "@/features/freightflow/api-client";
+import type { SoApplyResult, SoExtractionResult } from "@/lib/so/so-types";
 import {
   AiCopilotPanel,
   type AiRequestState,
 } from "@/features/freightflow/ai-copilot-panel";
+import { SoExtractResultPanel } from "@/features/booking/so-extract-result-panel";
+import { SoUploadPanel, type SoUploadDraft } from "@/features/booking/so-upload-panel";
 import { BookingModal } from "@/features/freightflow/booking-modal";
 import {
   OpenClawSettingsModal,
@@ -74,6 +85,27 @@ import {
   ShipmentDetailPanel,
   ShipmentFieldPanel,
 } from "@/features/freightflow/detail-panels";
+
+function buildSampleSoText(shipment: ShipmentRecord) {
+  const [vessel = shipment.vesselVoyage, voyage = ""] = shipment.vesselVoyage.split(/\s+(?=[A-Z0-9-]+$)/);
+
+  return [
+    `SO: ${shipment.soNo}`,
+    `Carrier: ${shipment.carrier}`,
+    `Vessel: ${vessel}`,
+    `Voyage: ${voyage}`,
+    `ETD: ${shipment.etd}`,
+    `ETA: ${shipment.eta}`,
+    `POL: ${shipment.originPort}`,
+    `POD: ${shipment.destinationPort}`,
+    `Container Quantity: 1`,
+    `Container Type: ${shipment.containerType}`,
+    `Cutoff: ${shipment.cutoffTime}`,
+    `Pickup Location: ${shipment.pickupLocation}`,
+    `Return Location: ${shipment.returnLocation}`,
+    `Booking Agent: ${shipment.bookingAgent}`,
+  ].join("\n");
+}
 
 export function FreightflowWorkbenchPage() {
   const [shipmentState, setShipmentState] = useState<ShipmentRecord[]>(shipments);
@@ -92,9 +124,21 @@ export function FreightflowWorkbenchPage() {
   const [toast, setToast] = useState<null | ToastState>(null);
   const [bookingShipmentId, setBookingShipmentId] = useState<string | null>(null);
   const [bookingDraft, setBookingDraft] = useState<BookingDraft>(() => buildBookingDraft(shipments[0]));
+  const [bookingDraftLoading, setBookingDraftLoading] = useState(false);
   const [recipientInput, setRecipientInput] = useState("");
   const [ccInput, setCcInput] = useState("");
   const [bookingSending, setBookingSending] = useState(false);
+  const [soDraft, setSoDraft] = useState<SoUploadDraft>(() => ({
+    fileName: `${shipments[0]?.batchNo ?? "shipment"}-so.txt`,
+    mimeType: "text/plain",
+    sourceText: "",
+  }));
+  const [soWorking, setSoWorking] = useState(false);
+  const [soReplySyncing, setSoReplySyncing] = useState(false);
+  const [soStatusText, setSoStatusText] = useState("等待 SO 文本或邮件附件。");
+  const [soExtraction, setSoExtraction] = useState<SoExtractionResult | null>(null);
+  const [soValidation, setSoValidation] = useState<SoValidationResult | null>(null);
+  const [soApplyResult, setSoApplyResult] = useState<(SoApplyResult & { persisted?: boolean }) | null>(null);
   const [contactState, setContactState] = useState<ContactRecord[]>(() => buildContacts(shipments[0]));
   const [contactDraft, setContactDraft] = useState<ContactDraft>({
     email: "",
@@ -422,14 +466,14 @@ export function FreightflowWorkbenchPage() {
     if (!bookingShipmentId) return;
 
     function handleEscape(event: KeyboardEvent) {
-      if (event.key === "Escape" && !bookingSending) {
+      if (event.key === "Escape" && !bookingSending && !bookingDraftLoading) {
         setBookingShipmentId(null);
       }
     }
 
     window.addEventListener("keydown", handleEscape);
     return () => window.removeEventListener("keydown", handleEscape);
-  }, [bookingShipmentId, bookingSending]);
+  }, [bookingDraftLoading, bookingShipmentId, bookingSending]);
 
   function persistActionInBackground(action: DetailActionLabel, shipmentId = selectedShipment.id, draft?: BookingDraft) {
     void persistShipmentAction({ action, draft, shipmentId }).catch((error) => {
@@ -470,11 +514,26 @@ export function FreightflowWorkbenchPage() {
     );
   }
 
+  function resetSoPanel(nextShipment: ShipmentRecord | undefined) {
+    if (!nextShipment) return;
+
+    setSoDraft({
+      fileName: `${nextShipment.batchNo}-so.txt`,
+      mimeType: "text/plain",
+      sourceText: "",
+    });
+    setSoStatusText("等待 SO 文本或邮件附件。");
+    setSoExtraction(null);
+    setSoValidation(null);
+    setSoApplyResult(null);
+  }
+
   function handleColumnChange(columnKey: string) {
     const nextRecords = recordsForColumn.get(columnKey) ?? [];
     setActiveColumn(columnKey);
     setSelectedShipmentId(nextRecords[0]?.id ?? "");
     resetAiPanel(nextRecords[0]);
+    resetSoPanel(nextRecords[0]);
   }
 
   function handleNavSelect(item: string) {
@@ -559,23 +618,41 @@ export function FreightflowWorkbenchPage() {
     const nextShipment = visibleShipments.find((shipment) => shipment.id === shipmentId);
     setSelectedShipmentId(shipmentId);
     resetAiPanel(nextShipment);
+    resetSoPanel(nextShipment);
   }
 
   function handleResetQueueFilters() {
     setSearchTerm("");
   }
 
-  function openBookingModal(shipment: ShipmentRecord) {
+  async function openBookingModal(shipment: ShipmentRecord) {
     setBookingShipmentId(shipment.id);
     setBookingDraft(buildBookingDraft(shipment));
+    setBookingDraftLoading(true);
     setRecipientInput("");
     setCcInput("");
     setContactDraft({ email: "", label: "", role: "booking_agent" });
     setContactState((current) => mergeContacts(current, buildContacts(shipment)));
+
+    try {
+      const result = await generateBookingDraft({ shipment, shipmentId: shipment.id });
+      setBookingDraft(result.draft);
+      setToast({
+        tone: result.canSend ? "success" : "info",
+        message: result.warning ?? (result.canSend ? "AI 订舱邮件草稿已生成" : "草稿已生成，请补齐发送检查项"),
+      });
+    } catch (error) {
+      setToast({
+        tone: "info",
+        message: error instanceof Error ? `${error.message} 已使用本地草稿。` : "草稿生成失败，已使用本地草稿。",
+      });
+    } finally {
+      setBookingDraftLoading(false);
+    }
   }
 
   function handleCloseBooking() {
-    if (bookingSending) return;
+    if (bookingSending || bookingDraftLoading) return;
 
     setBookingShipmentId(null);
   }
@@ -650,16 +727,34 @@ export function FreightflowWorkbenchPage() {
 
     setBookingSending(true);
     let emailPersisted = false;
+    let actionPersistedByBookingApi = false;
 
     try {
-      await sendBookingEmail({ draft: bookingDraft, shipmentId: bookingShipment.id });
+      await sendConfirmedBookingEmail({ draft: bookingDraft, shipmentId: bookingShipment.id });
       emailPersisted = true;
+      actionPersistedByBookingApi = true;
     } catch (error) {
-      setToast({
-        tone: "info",
-        message: error instanceof Error ? `${error.message} 已保留本地演示状态。` : "邮件未持久化，已保留本地演示状态。",
-      });
-      await new Promise((resolve) => window.setTimeout(resolve, 350));
+      const errorMessage = error instanceof Error ? error.message : "邮件未持久化，已保留本地演示状态。";
+      const canUseLocalFallback = /Booking email is not sendable|Email settings/i.test(errorMessage);
+
+      if (canUseLocalFallback) {
+        try {
+          await sendBookingEmail({ draft: bookingDraft, shipmentId: bookingShipment.id });
+          emailPersisted = true;
+        } catch {
+          setToast({
+            tone: "info",
+            message: `${errorMessage} 已保留本地演示状态。`,
+          });
+          await new Promise((resolve) => window.setTimeout(resolve, 350));
+        }
+      } else {
+        setToast({
+          tone: "info",
+          message: `${errorMessage} 已保留本地演示状态。`,
+        });
+        await new Promise((resolve) => window.setTimeout(resolve, 350));
+      }
     }
 
     setShipmentState((current) =>
@@ -679,16 +774,137 @@ export function FreightflowWorkbenchPage() {
     setBookingShipmentId(null);
     setToast({
       tone: emailPersisted ? "success" : "info",
-      message: emailPersisted ? "订舱邮件已发送并记录" : "订舱邮件已完成本地演示发送",
+      message: emailPersisted
+        ? actionPersistedByBookingApi
+          ? "订舱邮件已确认发送并回写 Shipment"
+          : "订舱邮件已发送并记录"
+        : "订舱邮件已完成本地演示发送",
     });
-    persistActionInBackground("订舱邮件", bookingShipment.id, bookingDraft);
+    if (!actionPersistedByBookingApi) {
+      persistActionInBackground("订舱邮件", bookingShipment.id, bookingDraft);
+    }
+  }
+
+  async function handleRunSoExtraction() {
+    if (soWorking || !selectedShipment) return;
+
+    setSoWorking(true);
+    setSoApplyResult(null);
+    setSoStatusText("SO 上传中...");
+
+    try {
+      const document = await uploadSoDocument({
+        fileName: soDraft.fileName || `${selectedShipment.batchNo}-so.txt`,
+        mimeType: soDraft.mimeType || "text/plain",
+        shipmentId: selectedShipment.id,
+        sourceText: soDraft.sourceText,
+      });
+      setSoStatusText("OCR 识别中...");
+
+      const ocr = await runSoOcr({
+        fileName: document.fileName,
+        mimeType: document.mimeType,
+        soDocumentId: document.id,
+        sourceText: soDraft.sourceText,
+      });
+
+      if (!ocr.rawText.trim()) {
+        throw new Error(ocr.message);
+      }
+
+      setSoStatusText("字段抽取中...");
+      const result = await extractSoDocument({
+        rawText: ocr.rawText,
+        soDocumentId: document.id,
+      });
+
+      setSoExtraction(result.extraction);
+      setSoValidation(result.validation);
+      setSoStatusText(`已识别 ${result.extraction.fields.filter((field) => field.value).length} 个字段。`);
+      setToast({
+        tone: result.validation.canAutoApply ? "success" : "info",
+        message: result.validation.canAutoApply ? "SO 已识别，可自动回写" : "SO 已识别，部分字段需要复核",
+      });
+    } catch (error) {
+      setSoStatusText(error instanceof Error ? error.message : "SO 识别失败。");
+      setToast({
+        tone: "info",
+        message: error instanceof Error ? error.message : "SO 识别失败。",
+      });
+    } finally {
+      setSoWorking(false);
+    }
+  }
+
+  async function handleApplySoExtraction() {
+    if (!soExtraction || soWorking) return;
+
+    setSoWorking(true);
+
+    try {
+      const result = await applySoExtractionToShipment({
+        extraction: soExtraction,
+        shipmentId: selectedShipment.id,
+      });
+
+      setSoApplyResult(result);
+      setShipmentState((current) =>
+        current.map((shipment) => (shipment.id === selectedShipment.id ? result.shipment : shipment)),
+      );
+      setSelectedShipmentId(result.shipment.id);
+      setToast({
+        tone: "success",
+        message: `SO 已回写 ${result.appliedFields.length} 个字段`,
+      });
+    } catch (error) {
+      setToast({
+        tone: "info",
+        message: error instanceof Error ? error.message : "SO 回写失败。",
+      });
+    } finally {
+      setSoWorking(false);
+    }
+  }
+
+  async function handleSyncReplies() {
+    if (soReplySyncing) return;
+
+    setSoReplySyncing(true);
+
+    try {
+      const result = await syncBookingReplies();
+      setToast({
+        tone: result.createdDocuments.length > 0 ? "success" : "info",
+        message:
+          result.warning ??
+          `已同步 ${result.messageCount} 封回邮，匹配 ${result.matchedCount} 封，发现 ${result.createdDocuments.length} 个 SO 附件`,
+      });
+    } catch (error) {
+      setToast({
+        tone: "info",
+        message: error instanceof Error ? error.message : "回邮同步失败。",
+      });
+    } finally {
+      setSoReplySyncing(false);
+    }
+  }
+
+  function handleLoadSampleSo() {
+    setSoDraft({
+      fileName: `${selectedShipment.batchNo}-so.txt`,
+      mimeType: "text/plain",
+      sourceText: buildSampleSoText(selectedShipment),
+    });
+    setSoExtraction(null);
+    setSoValidation(null);
+    setSoApplyResult(null);
+    setSoStatusText("示例 SO 已载入。");
   }
 
   function handleAction(action: DetailActionLabel) {
     switch (action) {
       case "订舱邮件":
-        openBookingModal(selectedShipment);
-        setToast({ tone: "info", message: "已打开订舱邮件草稿" });
+        void openBookingModal(selectedShipment);
         break;
       default:
         const result = applyLocalShipmentAction(action);
@@ -774,7 +990,7 @@ export function FreightflowWorkbenchPage() {
         <section className="flex min-h-screen flex-col px-3 py-3 sm:px-4 xl:px-5">
           <WorkbenchHeader
             activeNav={activeNav}
-            onPrimaryAction={() => void sendToAi(aiInput)}
+            onPrimaryAction={() => void openBookingModal(selectedShipment)}
             primaryActionLabel="AI 生成邮件"
             onRefresh={() => void refreshWorkbenchData(true)}
             onSecondaryAction={(action) => handleAction(action)}
@@ -830,6 +1046,26 @@ export function FreightflowWorkbenchPage() {
                     }}
                   />
 
+                  <SoUploadPanel
+                    disabled={soWorking}
+                    draft={soDraft}
+                    onChange={setSoDraft}
+                    onLoadSample={handleLoadSampleSo}
+                    onRun={() => void handleRunSoExtraction()}
+                    onSyncReplies={() => void handleSyncReplies()}
+                    selectedBatchNo={selectedShipment.batchNo}
+                    statusText={soStatusText}
+                    syncing={soReplySyncing}
+                  />
+
+                  <SoExtractResultPanel
+                    applyResult={soApplyResult}
+                    extraction={soExtraction}
+                    onApply={() => void handleApplySoExtraction()}
+                    validation={soValidation}
+                    working={soWorking}
+                  />
+
                 </div>
               </div>
             </section>
@@ -859,7 +1095,7 @@ export function FreightflowWorkbenchPage() {
         bookingChecklistItems={bookingChecklistItems}
         bookingContacts={contactState}
         bookingDraft={bookingDraft}
-        bookingSending={bookingSending}
+        bookingSending={bookingSending || bookingDraftLoading}
         ccInput={ccInput}
         ccInputInvalid={ccInputInvalid}
         contactDraft={contactDraft}

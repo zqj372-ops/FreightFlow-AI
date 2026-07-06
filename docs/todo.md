@@ -25,31 +25,31 @@ AI 生成订舱邮件
 
 ### 1.1 AI 大模型自动订舱邮件(P0)
 
-- 新增 `src/lib/booking/**` 草稿上下文、prompt、validator。
-- 新增 `POST /api/booking/draft`,返回 `subject / body / to / cc / missingFields / riskNotes / canSend`。
-- AI 只生成草稿,不能绕过人工确认发送。
-- 缺起运港、目的港、柜型、柜量或预计 ETD 时,必须阻止自动发送。
+- 状态:已新增 `src/lib/booking/**` 草稿上下文、prompt、validator。
+- 状态:已新增 `POST /api/booking/draft`,返回 `subject / body / to / cc / missingFields / riskNotes / canSend`。
+- 状态:AI 只生成草稿,发送仍要求人工点击确认。
+- 状态:缺起运港、目的港、柜型、柜量或预计 ETD 时,会阻止 confirmed send。
 
 ### 1.2 SMTP 发送 + IMAP 回邮同步(P0)
 
-- 补强当前 `src/lib/services/email/**` 或新增 `src/lib/email/**` 边界。
-- 新增 `POST /api/booking/send`,要求 `confirmed === true`。
-- 新增 `POST /api/booking/sync-replies`,拉取近期/未读回邮并识别可能的 SO 附件。
-- 发送成功后必须写 `ShipmentEmailLog` 和 `ShipmentActionLog`。
+- 状态:已新增 `src/lib/email/**` 附件检测、邮件解析、Shipment 匹配、IMAP 抓取边界。
+- 状态:已新增 `POST /api/booking/send`,要求 `confirmed === true`。
+- 状态:已新增 `POST /api/booking/sync-replies`,可拉取回邮或接收 sample messages 并识别 SO 附件。
+- 状态:confirmed send 会写 `ShipmentEmailLog` 与 `ShipmentActionLog`;数据库不可用时 UI 保留 demo fallback。
 
 ### 1.3 SO OCR 与结构化抽取(P0)
 
-- 新增 `src/lib/so/**` provider 边界、extractor、validator、field mapper。
-- 新增 `POST /api/so/upload`、`/api/so/ocr`、`/api/so/extract`、`/api/so/apply-to-shipment`。
-- OCR 未配置时要返回明确 not_configured,不能让页面崩溃。
-- 低置信度字段必须人工确认,不能自动覆盖 Shipment。
+- 状态:已新增 `src/lib/so/**` OCR 边界、extractor、validator、field mapper。
+- 状态:已新增 `POST /api/so/upload`、`/api/so/ocr`、`/api/so/extract`、`/api/so/apply-to-shipment`。
+- 状态:OCR 未配置时返回明确 not_configured;当前 MVP 支持文本/文本文件直通识别。
+- 状态:低置信度字段不会自动覆盖 Shipment。
 
 ### 1.4 Shipment 回写(P0)
 
-- SO 识别成功后 `soStatus` 改为 `已识别`。
-- `等待放舱 / 已催放舱` 可推进到 `已放舱`。
-- 如果仍缺补料字段,下一步进入 `待补料`。
-- 每次回写必须创建 `ShipmentActionLog`。
+- 状态:SO 识别成功后 `soStatus` 改为 `已识别`。
+- 状态:`等待放舱 / 已催放舱` 可推进到 `已放舱`。
+- 状态:当前会把 `待生成` 补料状态推进为 `处理中`,并提示检查补料字段。
+- 状态:数据库可用时每次回写创建 `ShipmentActionLog`;不可用时返回本地预览。
 
 ## 2. 支撑性数据层(P0/P1)
 
@@ -212,13 +212,13 @@ Step 1:
   - [x] Agent 1:收窄 UI + 新增 AGENTS.md + 新增 docs/booking-mvp.md
 
 Step 2:
-  - [ ] Agent 2:AI 订舱邮件草稿 / SMTP 发送 / IMAP 回邮同步 / SO 附件检测
+  - [x] Agent 2:AI 订舱邮件草稿 / SMTP 发送 / IMAP 回邮同步 / SO 附件检测
 
 Step 3:
-  - [ ] Agent 3:SO 上传 / OCR provider / 大模型结构化抽取 / 高置信度回写
+  - [x] Agent 3:SO 上传 / OCR provider / 大模型结构化抽取 / 高置信度回写
 
 Step 4:
-  - [ ] Integration:订舱邮件发送 → 回邮发现 SO → OCR/抽取 → 回写 Shipment
+  - [x] Integration:订舱邮件发送 → 回邮发现 SO → OCR/抽取 → 回写 Shipment
 ```
 
 ---
