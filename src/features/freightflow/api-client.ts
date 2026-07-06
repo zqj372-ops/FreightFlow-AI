@@ -1,6 +1,7 @@
 import type { ShipmentRecord } from "@/lib/mock-data";
 import type { SoApplyResult, SoExtractionResult, SoOcrResult } from "@/lib/so/so-types";
 import type { ContactRecord, DetailActionLabel } from "@/lib/freightflow-domain";
+import type { AiProviderId } from "@/lib/ai-providers";
 
 import type { BookingDraft } from "./page-helpers";
 
@@ -22,6 +23,8 @@ export type PublicOpenClawConfig = {
   endpoint: string;
   enabled: boolean;
   model: string;
+  models: string[];
+  provider: AiProviderId;
   timeoutMs: number;
   updatedAt: string | null;
 };
@@ -31,6 +34,8 @@ export type OpenClawSettingsPayload = {
   endpoint: string;
   enabled: boolean;
   model: string;
+  models?: string[];
+  provider: AiProviderId;
   test?: boolean;
   timeoutMs: number;
 };

@@ -1,3 +1,4 @@
+import { requestAiModel } from "./ai-model-client";
 import { readOpenClawConfig } from "./openclaw-config";
 
 type OpenClawJsonRequest = {
@@ -40,33 +41,22 @@ export function parseOpenClawJson<T>(data: unknown): T | null {
 
 export async function requestOpenClawJson<T>({ context, prompt }: OpenClawJsonRequest): Promise<T | null> {
   const config = await readOpenClawConfig();
-  if (!config.enabled || !config.endpoint) return null;
+  if (!config.enabled) return null;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
 
   try {
-    const response = await fetch(config.endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
-      },
-      body: JSON.stringify({
-        context: context ?? {},
-        model: config.model || undefined,
-        prompt,
-        response_format: { type: "json_object" },
-        source: "freightflow-ai",
-      }),
-      cache: "no-store",
+    const response = await requestAiModel(config, {
+      context,
+      json: true,
+      prompt,
       signal: controller.signal,
     });
-
-    const data = await response.json().catch(() => null);
     if (!response.ok) return null;
 
-    return parseOpenClawJson<T>(data);
+    const data = response.data && typeof response.data === "object" ? response.data : {};
+    return parseOpenClawJson<T>({ ...data, reply: response.reply });
   } catch {
     return null;
   } finally {

@@ -153,6 +153,7 @@ export function FreightflowWorkbenchPage() {
     endpoint: "",
     enabled: false,
     model: "",
+    provider: "openai",
     timeoutMs: 30000,
   });
   const [openClawSettingsLoading, setOpenClawSettingsLoading] = useState(false);
@@ -434,6 +435,8 @@ export function FreightflowWorkbenchPage() {
           endpoint: config.endpoint,
           enabled: config.enabled,
           model: config.model,
+          models: config.models,
+          provider: config.provider,
           timeoutMs: config.timeoutMs,
         });
       } else {
@@ -568,15 +571,17 @@ export function FreightflowWorkbenchPage() {
         endpoint: result.config.endpoint,
         enabled: result.config.enabled,
         model: result.config.model,
+        models: result.config.models,
+        provider: result.config.provider,
         timeoutMs: result.config.timeoutMs,
       });
       setOpenClawTestResult(result.test ?? null);
       setToast({
         tone: result.test?.ok === false ? "info" : "success",
-        message: test ? result.test?.message ?? "OpenClaw 配置已保存" : "OpenClaw 配置已保存",
+        message: test ? result.test?.message ?? "AI 大模型配置已保存" : "AI 大模型配置已保存",
       });
     } catch (error) {
-      setOpenClawSettingsError(error instanceof Error ? error.message : "OpenClaw 配置保存失败");
+      setOpenClawSettingsError(error instanceof Error ? error.message : "AI 大模型配置保存失败");
     } finally {
       setOpenClawSettingsLoading(false);
     }

@@ -179,7 +179,7 @@ export function AiCopilotPanel({
                   </span>
                 </div>
                 <p className="mt-1 text-xs leading-5 text-slate-400">
-                  OpenClaw bridge / 当前 Shipment 上下文会自动注入，优先用于生成订舱邮件、检查缺失字段和判断 SO 回写。
+                  AI 大模型 / 当前 Shipment 上下文会自动注入，优先用于生成订舱邮件、检查缺失字段和判断 SO 回写。
                 </p>
               </div>
             </div>

@@ -1,11 +1,15 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { DEFAULT_AI_PROVIDER_ID, getAiProviderPreset, type AiProviderId } from "./ai-providers";
+
 export type OpenClawConfig = {
   apiKey: string;
   endpoint: string;
   enabled: boolean;
   model: string;
+  models: string[];
+  provider: AiProviderId;
   timeoutMs: number;
   updatedAt: string | null;
 };
@@ -24,7 +28,9 @@ export const defaultOpenClawConfig: OpenClawConfig = {
   apiKey: "",
   endpoint: "",
   enabled: false,
-  model: "",
+  model: getAiProviderPreset(DEFAULT_AI_PROVIDER_ID).defaultModel,
+  models: getAiProviderPreset(DEFAULT_AI_PROVIDER_ID).models,
+  provider: DEFAULT_AI_PROVIDER_ID,
   timeoutMs: DEFAULT_TIMEOUT_MS,
   updatedAt: null,
 };
@@ -44,26 +50,48 @@ function normalizeTimeout(value: unknown) {
   return Math.min(Math.max(Math.round(numeric), 5000), 120000);
 }
 
+function normalizeString(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeModels(value: unknown, fallback: string[]) {
+  const models = Array.isArray(value)
+    ? value.filter((model): model is string => typeof model === "string" && model.trim().length > 0).map((model) => model.trim())
+    : [];
+
+  return models.length > 0 ? Array.from(new Set(models)) : fallback;
+}
+
 function normalizeConfig(raw: RawOpenClawConfig | null | undefined): OpenClawConfig {
+  const endpoint = normalizeString(raw?.endpoint);
+  const provider = getAiProviderPreset(normalizeString(raw?.provider) || (endpoint ? "custom" : DEFAULT_AI_PROVIDER_ID));
+  const models = normalizeModels(raw?.models, provider.models);
+  const model = normalizeString(raw?.model) || provider.defaultModel || models[0] || "";
+
   return {
-    apiKey: typeof raw?.apiKey === "string" ? raw.apiKey.trim() : "",
-    endpoint: typeof raw?.endpoint === "string" ? raw.endpoint.trim() : "",
+    apiKey: normalizeString(raw?.apiKey),
+    endpoint,
     enabled: Boolean(raw?.enabled),
-    model: typeof raw?.model === "string" ? raw.model.trim() : "",
+    model,
+    models,
+    provider: provider.id,
     timeoutMs: normalizeTimeout(raw?.timeoutMs),
     updatedAt: typeof raw?.updatedAt === "string" ? raw.updatedAt : null,
   };
 }
 
 function envConfig(): OpenClawConfig {
-  const endpoint = process.env.OPENCLAW_API_URL?.trim() ?? "";
+  const endpoint = process.env.AI_BASE_URL?.trim() || process.env.OPENCLAW_API_URL?.trim() || "";
+  const apiKey = process.env.AI_API_KEY?.trim() || process.env.OPENCLAW_API_KEY?.trim() || "";
+  const provider = process.env.AI_PROVIDER?.trim() || (endpoint ? "custom" : DEFAULT_AI_PROVIDER_ID);
 
   return normalizeConfig({
-    apiKey: process.env.OPENCLAW_API_KEY?.trim() ?? "",
+    apiKey,
     endpoint,
-    enabled: Boolean(endpoint),
-    model: process.env.OPENCLAW_MODEL?.trim() ?? "",
-    timeoutMs: process.env.OPENCLAW_TIMEOUT_MS,
+    enabled: Boolean(apiKey || endpoint),
+    model: process.env.AI_MODEL?.trim() || process.env.OPENCLAW_MODEL?.trim() || "",
+    provider: provider as AiProviderId,
+    timeoutMs: process.env.AI_TIMEOUT_MS ?? process.env.OPENCLAW_TIMEOUT_MS,
     updatedAt: null,
   });
 }
@@ -88,25 +116,32 @@ export async function readOpenClawConfig(): Promise<OpenClawConfig> {
 
 export async function saveOpenClawConfig(input: Partial<OpenClawConfig>) {
   const existing = (await readStoredOpenClawConfig()) ?? envConfig();
+  const nextApiKey =
+    typeof input.apiKey === "string" && input.apiKey.trim().length > 0 ? input.apiKey : existing.apiKey;
   const next = normalizeConfig({
     ...existing,
     ...input,
-    apiKey: typeof input.apiKey === "string" ? input.apiKey : existing.apiKey,
+    apiKey: nextApiKey,
     updatedAt: new Date().toISOString(),
   });
+  const provider = getAiProviderPreset(next.provider);
 
-  if (next.enabled && !next.endpoint) {
-    throw new Error("启用 OpenClaw 前必须填写服务地址。");
+  if (next.enabled && !next.apiKey && !provider.requiresBaseUrl) {
+    throw new Error("启用 AI 大模型前必须填写 API Key。");
+  }
+
+  if (next.enabled && provider.requiresBaseUrl && !next.endpoint) {
+    throw new Error("使用自定义模型前必须填写 Base URL。");
   }
 
   if (next.endpoint) {
     try {
       const url = new URL(next.endpoint);
-      if (!['http:', 'https:'].includes(url.protocol)) {
-        throw new Error("OpenClaw 服务地址必须是 HTTP 或 HTTPS。");
+      if (!["http:", "https:"].includes(url.protocol)) {
+        throw new Error("AI Base URL 必须是 HTTP 或 HTTPS。");
       }
     } catch {
-      throw new Error("OpenClaw 服务地址格式无效。");
+      throw new Error("AI Base URL 格式无效。");
     }
   }
 
@@ -121,6 +156,8 @@ export function toPublicOpenClawConfig(config: OpenClawConfig): PublicOpenClawCo
     endpoint: config.endpoint,
     enabled: config.enabled,
     model: config.model,
+    models: config.models,
+    provider: config.provider,
     timeoutMs: config.timeoutMs,
     updatedAt: config.updatedAt,
     apiKeyConfigured: config.apiKey.length > 0,
