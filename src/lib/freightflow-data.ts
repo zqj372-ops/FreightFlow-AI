@@ -12,6 +12,16 @@ import {
 } from "@prisma/client";
 
 import {
+  applyShipmentAction,
+  detailActionLabels,
+  formatFreightFlowEmail,
+  isDetailActionLabel,
+  type ContactRecord,
+  type ContactRole,
+  type DetailActionLabel,
+  type ShipmentActionRequest,
+} from "./freightflow-domain";
+import {
   getAlertLevel,
   shipments as mockShipments,
   type AlertLevel,
@@ -19,7 +29,6 @@ import {
   type ShipmentStatus,
 } from "./mock-data";
 import { prisma } from "./prisma";
-import type { ContactRecord, ContactRole, DetailActionLabel } from "../features/freightflow/page-helpers";
 
 export const shipmentInclude = {
   documentProgress: true,
@@ -32,19 +41,6 @@ export type ShipmentWithRelations = Prisma.ShipmentGetPayload<{ include: typeof 
 export type ContactApiRecord = ContactRecord & {
   id?: string;
   isActive?: boolean;
-};
-
-export type ShipmentActionRequest = {
-  action?: DetailActionLabel;
-  actionType?: DetailActionLabel;
-  actorEmail?: string;
-  actorName?: string;
-  body?: string;
-  cc?: string[];
-  exceptionMessage?: string;
-  source?: "UI" | "AI" | "SYSTEM";
-  subject?: string;
-  to?: string[];
 };
 
 const shipmentStatusToDb = {
@@ -360,12 +356,12 @@ export function getFallbackContacts(): ContactApiRecord[] {
 
   for (const shipment of mockShipments) {
     addContact({
-      email: `${shipment.bookingAgent.toLowerCase().replace(/\s+/g, ".")}@freightflow.ai`,
+      email: formatFreightFlowEmail(shipment.bookingAgent),
       label: `${shipment.bookingAgent} booking desk`,
       role: "booking_agent",
     });
     addContact({
-      email: `${shipment.operator.toLowerCase().replace(/\s+/g, ".")}@freightflow.ai`,
+      email: formatFreightFlowEmail(shipment.operator),
       label: `${shipment.operator} operator`,
       role: "ops",
     });
@@ -418,8 +414,8 @@ export function normalizeShipmentAction(input: unknown) {
   const body = input as ShipmentActionRequest;
   const action = body.action ?? body.actionType;
 
-  if (!action || !(action in actionTypeToDb)) {
-    return { error: "action must be one of 订舱邮件, 催单提醒, 补料文件, SO 识别, AMS/ACI/ISF, 异常标记." } as const;
+  if (!isDetailActionLabel(action)) {
+    return { error: `action must be one of ${detailActionLabels.join(", ")}.` } as const;
   }
 
   if (body.source && !actionSources.has(body.source)) {
@@ -427,85 +423,6 @@ export function normalizeShipmentAction(input: unknown) {
   }
 
   return { value: { ...body, action } } as const;
-}
-
-export function applyShipmentAction(record: ShipmentRecord, input: ShipmentActionRequest & { action: DetailActionLabel }) {
-  const now = formatDateForUi(new Date());
-
-  switch (input.action) {
-    case "订舱邮件":
-      return {
-        record: {
-          ...record,
-          lastEmailTime: now,
-          mailStatus: "已发送" as const,
-          status: record.status === "等待放舱" ? record.status : ("已发送订舱" as const),
-        },
-        summary: input.subject ? `已记录订舱邮件：${input.subject}` : "已记录订舱邮件发送动作",
-      };
-    case "催单提醒":
-      return {
-        record: {
-          ...record,
-          followUpCount: record.followUpCount + 1,
-          lastEmailTime: now,
-          mailStatus: "跟进中" as const,
-          reminderFlags: Array.from(new Set(["已手动催单", ...record.reminderFlags])),
-          status:
-            record.status === "等待放舱" || record.status === "已发送订舱"
-              ? ("已催放舱" as const)
-              : record.status,
-        },
-        summary: "已增加一次催单记录",
-      };
-    case "补料文件":
-      return {
-        record: {
-          ...record,
-          documentStatus: "已发送" as const,
-          lastEmailTime: now,
-          status: record.status === "待补料" ? ("已发送补料" as const) : record.status,
-        },
-        summary: "补料文件状态已推进",
-      };
-    case "SO 识别":
-      return {
-        record: {
-          ...record,
-          soStatus: "已识别" as const,
-          status:
-            record.status === "已催放舱" || record.status === "等待放舱"
-              ? ("已放舱" as const)
-              : record.status,
-        },
-        summary: "SO 识别状态已更新",
-      };
-    case "AMS/ACI/ISF":
-      return {
-        record: {
-          ...record,
-          documentProgress: {
-            ams: "已发送" as const,
-            aci: record.documentProgress.aci === "待处理" ? ("草稿完成" as const) : record.documentProgress.aci,
-            isf: "已发送" as const,
-          },
-        },
-        summary: "AMS / ACI / ISF 进度已刷新",
-      };
-    case "异常标记": {
-      const message = input.exceptionMessage?.trim() || "人工标记异常";
-      const nextIsException = record.status !== "异常处理中";
-
-      return {
-        record: {
-          ...record,
-          exceptions: nextIsException ? Array.from(new Set([message, ...record.exceptions])) : [],
-          status: nextIsException ? ("异常处理中" as const) : ("待补料" as const),
-        },
-        summary: nextIsException ? `已标记异常：${message}` : "已清空异常并恢复待补料",
-      };
-    }
-  }
 }
 
 export async function persistShipmentAction(id: string, input: ShipmentActionRequest & { action: DetailActionLabel }) {
