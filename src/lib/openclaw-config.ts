@@ -111,7 +111,8 @@ export async function readStoredOpenClawConfig(): Promise<OpenClawConfig | null>
 
 export async function readOpenClawConfig(): Promise<OpenClawConfig> {
   const stored = await readStoredOpenClawConfig();
-  return stored ?? envConfig();
+  const config = stored ?? envConfig();
+  return config.apiKey ? config : { ...config, enabled: false };
 }
 
 export async function saveOpenClawConfig(input: Partial<OpenClawConfig>) {
@@ -126,7 +127,7 @@ export async function saveOpenClawConfig(input: Partial<OpenClawConfig>) {
   });
   const provider = getAiProviderPreset(next.provider);
 
-  if (next.enabled && !next.apiKey && !provider.requiresBaseUrl) {
+  if (next.enabled && !next.apiKey) {
     throw new Error("启用 AI 大模型前必须填写 API Key。");
   }
 
