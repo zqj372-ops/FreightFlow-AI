@@ -714,3 +714,32 @@ type ShipmentRecord = {
   - `npx tsc --noEmit --incremental false` 通过
   - `npm test` 通过,4 个测试文件 / 29 个用例
   - `npm run build` 通过
+
+### 2026-07-06 · 马尾辫结构重整:共享 shipment 动作状态机
+
+- 拉取 GitHub 仓库 `zqj372-ops/FreightFlow-AI` 到 `/Users/autumn/Documents/订舱邮件AI系统/FreightFlow-AI`。
+- 新增 `src/lib/freightflow-domain.ts`:
+  - 承接 `ContactRole / ContactRecord / DetailActionLabel / ShipmentActionRequest` 等共享业务类型。
+  - 承接 `applyShipmentAction`,让前端本地演示状态和 API 持久化动作共用同一套 shipment 状态推进逻辑。
+  - 承接 demo 邮箱格式化和动作时间格式化纯函数。
+- 更新 `src/lib/freightflow-data.ts`:
+  - 删除本文件内重复的 `ShipmentActionRequest` 与 `applyShipmentAction`。
+  - 不再从 `src/features/freightflow/page-helpers.ts` 倒向导入类型。
+  - 继续保留 Prisma 映射、API 输入校验、数据库读写和 mock fallback 边界。
+- 更新 `src/features/freightflow/workbench-page.tsx`:
+  - 删除本地重复 action switch 中的状态改写。
+  - 除“订舱邮件打开 modal”外,所有动作统一通过 `applyShipmentAction` 更新本地状态,再后台尝试持久化。
+  - 订舱邮件发送后的本地状态也改用同一动作状态机。
+- 更新 `src/features/freightflow/page-helpers.ts` 与 `api-client.ts`:
+  - 共享业务类型改从 `src/lib/freightflow-domain.ts` 来源。
+  - 页面 helper 只保留 UI tone、booking draft、联系人候选、邮箱校验和推荐动作等页面相关逻辑。
+- 新增 `src/lib/freightflow-domain.test.ts`:
+  - 覆盖 demo 邮箱格式化、动作时间格式化、动作 label 校验、催单状态推进、异常标记/清除。
+- 文档同步:
+  - 更新 `README.md` 当前架构、目录说明和下一步建议。
+  - 更新 `docs/project-overview.md` 目录结构、MVP 覆盖和已知限制。
+- 验证结果:
+  - `npm run prisma:generate` 通过
+  - `npm run lint` 通过
+  - `npm test` 通过,5 个测试文件 / 34 个用例
+  - `npm run build` 通过

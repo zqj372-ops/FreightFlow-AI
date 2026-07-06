@@ -1,6 +1,7 @@
 import type { ShipmentRecord } from "@/lib/mock-data";
+import type { ContactRecord, DetailActionLabel } from "@/lib/freightflow-domain";
 
-import type { BookingDraft, ContactRecord, DetailActionLabel } from "./page-helpers";
+import type { BookingDraft } from "./page-helpers";
 
 type ApiEnvelope<T> = {
   data?: T;

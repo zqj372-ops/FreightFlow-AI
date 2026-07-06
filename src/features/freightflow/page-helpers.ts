@@ -1,4 +1,12 @@
 import type { AlertLevel, ShipmentRecord } from "@/lib/mock-data";
+import {
+  formatFreightFlowEmail,
+  type ContactRecord,
+  type ContactRole,
+  type DetailActionLabel,
+} from "@/lib/freightflow-domain";
+
+export type { ContactRecord, ContactRole, DetailActionLabel } from "@/lib/freightflow-domain";
 
 export const quickPrompts = [
   "催当前队列里超4小时未放舱的柜子",
@@ -19,27 +27,11 @@ export type BookingDraft = {
   to: string[];
 };
 
-export type ContactRole = "booking_agent" | "ops" | "sales" | "customs";
-
-export type ContactRecord = {
-  email: string;
-  label: string;
-  role: ContactRole;
-};
-
 export type ContactDraft = {
   email: string;
   label: string;
   role: ContactRole;
 };
-
-export type DetailActionLabel =
-  | "订舱邮件"
-  | "催单提醒"
-  | "补料文件"
-  | "SO 识别"
-  | "AMS/ACI/ISF"
-  | "异常标记";
 
 export type SurfaceTone = "danger" | "info" | "neutral" | "success" | "warning";
 
@@ -123,10 +115,6 @@ export function actionButtonClass(primary = false) {
   return primary
     ? "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-cyan-600 px-3.5 text-sm font-medium text-white transition hover:bg-cyan-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/70 disabled:cursor-not-allowed disabled:bg-cyan-300 disabled:text-white/90"
     : "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400";
-}
-
-function formatFreightFlowEmail(value: string) {
-  return `${value.toLowerCase().replace(/\s+/g, ".")}@freightflow.ai`;
 }
 
 export function buildBookingDraft(shipment: ShipmentRecord): BookingDraft {

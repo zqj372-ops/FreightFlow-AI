@@ -27,6 +27,7 @@ import {
   type AlertLevel,
   type ShipmentRecord,
 } from "@/lib/mock-data";
+import { applyShipmentAction, type ShipmentActionRequest } from "@/lib/freightflow-domain";
 import {
   buildBookingDraft,
   buildContacts,
@@ -448,15 +449,6 @@ export function FreightflowWorkbenchPage() {
     return () => window.removeEventListener("keydown", handleEscape);
   }, [bookingShipmentId, bookingSending]);
 
-  function updateShipment(mutator: (shipment: ShipmentRecord) => ShipmentRecord, successMessage: string) {
-    if (!selectedShipment) return;
-
-    setShipmentState((current) =>
-      current.map((shipment) => (shipment.id === selectedShipment.id ? mutator(shipment) : shipment)),
-    );
-    setToast({ tone: "success", message: successMessage });
-  }
-
   function persistActionInBackground(action: DetailActionLabel, shipmentId = selectedShipment.id, draft?: BookingDraft) {
     void persistShipmentAction({ action, draft, shipmentId }).catch((error) => {
       setToast({
@@ -464,6 +456,24 @@ export function FreightflowWorkbenchPage() {
         message: error instanceof Error ? `${error.message} 已保留本地演示状态。` : "动作未持久化，已保留本地演示状态。",
       });
     });
+  }
+
+  function applyLocalShipmentAction(
+    action: DetailActionLabel,
+    shipmentId = selectedShipment.id,
+    input: Omit<ShipmentActionRequest, "action" | "actionType"> = {},
+  ) {
+    const target = shipmentState.find((shipment) => shipment.id === shipmentId);
+    if (!target) return null;
+
+    const result = applyShipmentAction(target, { ...input, action });
+    setShipmentState((current) =>
+      current.map((shipment) =>
+        shipment.id === shipmentId ? applyShipmentAction(shipment, { ...input, action }).record : shipment,
+      ),
+    );
+
+    return result;
   }
 
   function resetAiPanel(nextShipment: ShipmentRecord | undefined) {
@@ -675,12 +685,13 @@ export function FreightflowWorkbenchPage() {
     setShipmentState((current) =>
       current.map((shipment) =>
         shipment.id === bookingShipment.id
-          ? {
-              ...shipment,
-              lastEmailTime: new Date().toLocaleString("zh-CN", { hour12: false }),
-              mailStatus: "已发送",
-              status: shipment.mailStatus === "未发送" ? "已发送订舱" : shipment.status,
-            }
+          ? applyShipmentAction(shipment, {
+              action: "订舱邮件",
+              body: bookingDraft.body,
+              cc: bookingDraft.cc,
+              subject: bookingDraft.subject,
+              to: bookingDraft.to,
+            }).record
           : shipment,
       ),
     );
@@ -693,83 +704,18 @@ export function FreightflowWorkbenchPage() {
     persistActionInBackground("订舱邮件", bookingShipment.id, bookingDraft);
   }
 
-  function handleAction(action: string) {
+  function handleAction(action: DetailActionLabel) {
     switch (action) {
       case "订舱邮件":
         openBookingModal(selectedShipment);
         setToast({ tone: "info", message: "已打开订舱邮件草稿" });
         break;
-      case "催单提醒":
-        updateShipment(
-          (shipment) => ({
-            ...shipment,
-            followUpCount: shipment.followUpCount + 1,
-            mailStatus: "跟进中",
-            status:
-              shipment.status === "等待放舱" || shipment.status === "已发送订舱"
-                ? "已催放舱"
-                : shipment.status,
-            reminderFlags: Array.from(new Set(["已手动催单", ...shipment.reminderFlags])),
-          }),
-          "已增加一次催单记录",
-        );
-        persistActionInBackground("催单提醒");
-        break;
-      case "补料文件":
-        updateShipment(
-          (shipment) => ({
-            ...shipment,
-            documentStatus: "已发送",
-            status: shipment.status === "待补料" ? "已发送补料" : shipment.status,
-          }),
-          "补料文件状态已推进",
-        );
-        persistActionInBackground("补料文件");
-        break;
-      case "SO 识别":
-        updateShipment(
-          (shipment) => ({
-            ...shipment,
-            soStatus: "已识别",
-            status: shipment.status === "已催放舱" ? "已放舱" : shipment.status,
-          }),
-          "SO 识别状态已更新",
-        );
-        persistActionInBackground("SO 识别");
-        break;
-      case "AMS/ACI/ISF":
-        updateShipment(
-          (shipment) => ({
-            ...shipment,
-            documentProgress: {
-              ams: "已发送",
-              aci:
-                shipment.documentProgress.aci === "待处理"
-                  ? "草稿完成"
-                  : shipment.documentProgress.aci,
-              isf: "已发送",
-            },
-          }),
-          "AMS / ACI / ISF 进度已刷新",
-        );
-        persistActionInBackground("AMS/ACI/ISF");
-        break;
-      case "异常标记":
-        updateShipment(
-          (shipment) => ({
-            ...shipment,
-            status: shipment.status === "异常处理中" ? "待补料" : "异常处理中",
-            exceptions:
-              shipment.status === "异常处理中"
-                ? []
-                : Array.from(new Set(["人工标记异常", ...shipment.exceptions])),
-          }),
-          "异常状态已切换",
-        );
-        persistActionInBackground("异常标记");
-        break;
       default:
-        setToast({ tone: "info", message: `暂未实现动作：${action}` });
+        const result = applyLocalShipmentAction(action);
+        if (!result) return;
+
+        setToast({ tone: "success", message: result.summary });
+        persistActionInBackground(action);
     }
   }
 

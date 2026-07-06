@@ -57,7 +57,15 @@ freightflow-ai/
 │   │   ├── page-helpers.ts            # booking draft / 联系人 / 邮箱校验 / 状态推导
 │   │   └── shared-ui.tsx              # SectionCard / StatusBadge / ActionTile 等共享 UI
 │   └── lib/
-│       └── mock-data.ts               # 6 条 ShipmentRecord 样例
+│       ├── freightflow-domain.ts      # 共享业务类型 / shipment 动作状态机
+│       ├── freightflow-data.ts        # Prisma 映射 / API 输入校验 / 持久化动作
+│       ├── mock-data.ts               # 6 条 ShipmentRecord 样例
+│       ├── prisma.ts                  # Prisma Client 初始化
+│       └── services/                  # email / document 服务边界
+├── prisma/
+│   ├── schema.prisma
+│   ├── seed.mjs
+│   └── migrations/
 ├── .env.example
 ├── README.md
 ├── next.config.ts
@@ -116,6 +124,7 @@ freightflow-ai/
 - AI 副驾(快捷 prompt / 自定义 / 状态徽标 / 段落列表渲染)
 - `/api/ai/openclaw`(stub 模式 + 转发模式)
 - 一轮结构整理(workbench 页面下沉、BookingModal / AiCopilotPanel / detail panels 抽离、ActionTile 统一)
+- 二轮结构整理(`freightflow-domain.ts` 承接共享业务类型与 shipment 动作状态机,前端本地状态和 API 持久化共用同一套动作推进逻辑)
 - Vitest 最小测试基线(纯函数 + OpenClaw route stub/proxy/error 分支)
 
 ## 8. 已知限制
@@ -126,7 +135,7 @@ freightflow-ai/
 - **没有真实附件 / 文档流**:附件名是占位字符串。
 - **没有登录、权限、用户体系**。
 - **测试仍不完整**:已有 Vitest 最小单测基线,但没有覆盖率阈值和 E2E。
-- **`src/features/freightflow/workbench-page.tsx` 仍较大**,后续可继续拆分看板状态、订舱状态 hook 或动作流 reducer。
+- **`src/features/freightflow/workbench-page.tsx` 仍较大**,但动作状态机已下沉到 `src/lib/freightflow-domain.ts`;后续若继续增长,优先拆设置状态和订舱 modal 状态 hook。
 - **Prisma 7 使用 Postgres adapter 初始化**:`src/lib/prisma.ts` 通过 `@prisma/adapter-pg` + `pg` 创建 `PrismaClient`,构建期不会再因缺少 adapter 阻塞;真实数据库不可用时,相关 API 仍需各自 fallback。
 
 ## 9. 接续入口
