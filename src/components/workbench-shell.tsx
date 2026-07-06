@@ -4,7 +4,6 @@ import {
   Clock3,
   FileSearch,
   FileText,
-  Filter,
   LayoutDashboard,
   Mail,
   RefreshCw,
@@ -46,7 +45,7 @@ type HeaderProps = {
   activeNav: string;
   onPrimaryAction: () => void;
   onRefresh: () => void;
-  onSecondaryAction: (action: "催单提醒" | "补料文件") => void;
+  onSecondaryAction: (action: "订舱邮件" | "SO 识别") => void;
   primaryActionLabel?: string;
   selectedShipment: ShipmentRecord;
 };
@@ -59,15 +58,10 @@ type MetricStripProps = {
 
 type QueuePanelProps = {
   activeColumn: string;
-  alertFilter: AlertLevel | "all";
-  onAlertFilterChange: (value: AlertLevel | "all") => void;
   onClearFilters: () => void;
   onColumnChange: (columnKey: string) => void;
-  onOwnerFilterChange: (value: string) => void;
   onSearchChange: (value: string) => void;
   onSelectShipment: (shipmentId: string) => void;
-  ownerFilter: string;
-  ownerOptions: string[];
   recordsForColumn: Map<string, ShipmentRecord[]>;
   searchTerm: string;
   selectedShipmentId: string;
@@ -135,43 +129,22 @@ const navMeta: Record<
   }
 > = {
   "SO识别中心": {
-    description: "识别放舱文件、回写 SO 字段与柜号。",
+    description: "接收回邮或上传 SO 后，识别放舱字段并回写 Shipment。",
     icon: ScanSearch,
   },
-  "AMS/ACI/ISF": {
-    description: "申报文档状态和发送节奏统一管理。",
-    icon: ShieldCheck,
-  },
-  "异常中心": {
-    description: "处理红黄灯节点、柜型异常与超时提醒。",
-    icon: TriangleAlert,
-  },
-  "布局工作台": {
-    description: "",
+  "AI订舱工作台": {
+    description: "生成订舱邮件、确认发送、等待 SO 回邮并推进 Shipment。",
     icon: LayoutDashboard,
   },
-  "补料中心": {
-    description: "补料文件、草稿状态和确认回邮都在这里收口。",
-    icon: FileText,
-  },
   "设置": {
-    description: "规则、通知与自动化偏好。",
+    description: "配置 OpenClaw 与 IMAP/SMTP 邮箱服务。",
     icon: Settings2,
-  },
-  "邮件中心": {
-    description: "追踪订舱与跟进邮件的触发、发送与协同。",
-    icon: Mail,
-  },
-  "订舱工作台": {
-    description: "主屏聚焦筛选、选柜和下一步执行。",
-    icon: ShipWheel,
   },
 };
 
 const navSecondaryBadges: Partial<Record<string, string>> = {
-  "AMS/ACI/ISF": "3 项",
+  "AI订舱工作台": "Booking",
   "SO识别中心": "SO",
-  "邮件中心": "Mail",
 };
 
 const metricCards = [
@@ -218,15 +191,15 @@ export function SidebarNav({ activeNav, onOpenSettings, onSelect, summary }: Sid
             <ShipWheel className="h-5 w-5" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-white">FreightFlow AI</p>
-            <p className="text-xs text-slate-400">Ops Console</p>
+            <p className="text-sm font-semibold text-white">FreightFlow-AI</p>
+            <p className="text-xs text-slate-400">Booking + SO OCR</p>
           </div>
         </div>
 
         <div className="hidden items-center gap-2 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-[11px] text-slate-300 xl:flex">
           <CircleAlert className="h-3.5 w-3.5 text-red-300" />
           <span className="tabular-nums">{summary.redAlerts}</span>
-          <span className="text-slate-500">红色异常</span>
+          <span className="text-slate-500">待人工确认</span>
         </div>
       </div>
 
@@ -235,7 +208,7 @@ export function SidebarNav({ activeNav, onOpenSettings, onSelect, summary }: Sid
           {[
             ["活跃", `${summary.total}`],
             ["放舱", `${summary.waitingRelease}`],
-            ["异常", `${summary.redAlerts}`],
+            ["SO待审", `${summary.redAlerts}`],
           ].map(([label, value]) => (
             <div key={label} className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2">
               <p className="text-[11px] text-slate-500">{label}</p>
@@ -246,7 +219,7 @@ export function SidebarNav({ activeNav, onOpenSettings, onSelect, summary }: Sid
 
         <nav className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-1 xl:gap-1.5">
           {mainNav.map((item) => {
-            const meta = navMeta[item] ?? navMeta["订舱工作台"];
+            const meta = navMeta[item] ?? navMeta["AI订舱工作台"];
             const Icon = meta.icon;
             const isActive = activeNav === item;
             const badge = item === "异常中心" ? `${summary.redAlerts}` : navSecondaryBadges[item];
@@ -302,7 +275,8 @@ export function WorkbenchHeader({
   primaryActionLabel = "AI 总结",
   selectedShipment,
 }: HeaderProps) {
-  const navInfo = navMeta[activeNav] ?? navMeta["订舱工作台"];
+  const navInfo = navMeta[activeNav] ?? navMeta["AI订舱工作台"];
+  const title = activeNav === "AI订舱工作台" ? "AI 订舱与 SO 识别工作台" : activeNav;
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm shadow-slate-200/30">
@@ -311,7 +285,7 @@ export function WorkbenchHeader({
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-2 rounded-full border border-cyan-100 bg-cyan-50 px-2.5 py-1 text-[11px] font-medium text-cyan-700">
               <LayoutDashboard className="h-3.5 w-3.5" />
-              加拿大 / 美国海运整柜
+              AI 订舱邮件
             </span>
             <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] text-slate-600">
               <UserRound className="h-3.5 w-3.5" />
@@ -319,13 +293,13 @@ export function WorkbenchHeader({
             </span>
             <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] text-slate-600">
               <Clock3 className="h-3.5 w-3.5" />
-              ETD {selectedShipment.etd}
+              SO OCR 回写
             </span>
           </div>
 
           <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div className="min-w-0">
-              <h1 className="text-2xl font-semibold text-slate-950">{activeNav}</h1>
+              <h1 className="text-2xl font-semibold text-slate-950">{title}</h1>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{navInfo.description}</p>
             </div>
 
@@ -341,18 +315,18 @@ export function WorkbenchHeader({
               <button
                 type="button"
                 className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60"
-                onClick={() => onSecondaryAction("催单提醒")}
+                onClick={() => onSecondaryAction("订舱邮件")}
               >
                 <Mail className="h-4 w-4" />
-                催单
+                订舱邮件
               </button>
               <button
                 type="button"
                 className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60"
-                onClick={() => onSecondaryAction("补料文件")}
+                onClick={() => onSecondaryAction("SO 识别")}
               >
                 <FileText className="h-4 w-4" />
-                补料
+                SO 识别
               </button>
               <button
                 type="button"
@@ -406,31 +380,16 @@ export function MetricStrip({ activeColumn, onSelectColumn, summary }: MetricStr
 
 export function QueuePanel({
   activeColumn,
-  alertFilter,
-  onAlertFilterChange,
   onClearFilters,
   onColumnChange,
-  onOwnerFilterChange,
   onSearchChange,
   onSelectShipment,
-  ownerFilter,
-  ownerOptions,
   recordsForColumn,
   searchTerm,
   selectedShipmentId,
   visibleShipments,
 }: QueuePanelProps) {
-  const alertOptions: Array<{
-    key: AlertLevel | "all";
-    label: string;
-  }> = [
-    { key: "all", label: "全部" },
-    { key: "red", label: "红灯" },
-    { key: "yellow", label: "黄灯" },
-    { key: "green", label: "绿灯" },
-  ];
-
-  const hasFilters = searchTerm.trim().length > 0 || ownerFilter !== "all" || alertFilter !== "all";
+  const hasSearch = searchTerm.trim().length > 0;
 
   return (
     <section className="flex min-h-0 flex-col rounded-lg border border-slate-200 bg-white shadow-sm shadow-slate-200/30">
@@ -438,22 +397,18 @@ export function QueuePanel({
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="flex items-center gap-2 text-slate-900">
-              <p className="text-sm font-semibold">左侧队列</p>
+            <p className="text-sm font-semibold">订舱任务</p>
               <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600">
                 {visibleShipments.length} 柜
               </span>
             </div>
-            <p className="mt-1 text-xs leading-5 text-slate-500">状态先分栏，再叠加优先级、负责人和关键词筛选。</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">按订舱状态切换任务，优先处理邮件草稿、SO 回写和待补料节点。</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
             <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">
-              <Filter className="h-3.5 w-3.5" />
-              紧凑队列
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">
-              <Clock3 className="h-3.5 w-3.5" />
-              截点优先
+              <Mail className="h-3.5 w-3.5" />
+              订舱邮件优先
             </span>
           </div>
         </div>
@@ -479,61 +434,16 @@ export function QueuePanel({
             ) : null}
           </label>
 
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_170px] xl:w-[340px]">
-            <select
-              value={ownerFilter}
-              onChange={(event) => onOwnerFilterChange(event.target.value)}
-              className="min-h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-cyan-500"
-            >
-              {ownerOptions.map((owner) => (
-                <option key={owner} value={owner}>
-                  {owner === "all" ? "全部负责人" : owner}
-                </option>
-              ))}
-            </select>
-
+          <div className="xl:w-[120px]">
             <button
               type="button"
               onClick={onClearFilters}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60"
+              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60"
             >
               <RefreshCw className="h-4 w-4" />
               重置
             </button>
           </div>
-        </div>
-
-        <div className="mt-3 flex flex-wrap gap-2">
-          {alertOptions.map((option) => {
-            const active = alertFilter === option.key;
-            const tone = option.key === "red" ? "red" : option.key === "yellow" ? "amber" : option.key === "green" ? "emerald" : "slate";
-
-            return (
-              <button
-                key={option.key}
-                type="button"
-                onClick={() => onAlertFilterChange(option.key)}
-                className={cx(
-                  "inline-flex min-h-9 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60",
-                  toneClasses(tone, active),
-                )}
-              >
-                <span
-                  className={cx(
-                    "h-2 w-2 rounded-full",
-                    option.key === "red"
-                      ? "bg-red-500"
-                      : option.key === "yellow"
-                        ? "bg-amber-500"
-                        : option.key === "green"
-                          ? "bg-emerald-500"
-                          : "bg-slate-400",
-                  )}
-                />
-                {option.label}
-              </button>
-            );
-          })}
         </div>
 
         <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
@@ -574,7 +484,7 @@ export function QueuePanel({
             </div>
             <p className="mt-4 text-sm font-medium text-slate-900">当前队列没有匹配记录</p>
             <p className="mt-2 max-w-xs text-sm leading-6 text-slate-500">
-              {hasFilters ? "试试放宽搜索词、优先级或负责人筛选。" : "当前状态列下暂无柜子，可切换到其他状态列继续处理。"}
+              {hasSearch ? "试试放宽搜索词。" : "当前状态列下暂无柜子，可切换到其他状态列继续处理。"}
             </p>
             <button
               type="button"

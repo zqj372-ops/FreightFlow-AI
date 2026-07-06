@@ -743,3 +743,24 @@ type ShipmentRecord = {
   - `npm run lint` 通过
   - `npm test` 通过,5 个测试文件 / 34 个用例
   - `npm run build` 通过
+
+### 2026-07-06 · Agent 1 范围收窄:AI 订舱与 SO 识别工作台
+
+- 产品方向调整:
+  - 从综合 FreightFlow 操作台收窄为“AI 订舱与 SO 识别工作台”。
+  - 第一优先级改为 AI 生成订舱邮件、SMTP 发送、IMAP 回邮同步、SO 附件检测、OCR/大模型抽取、Shipment 回写。
+  - 报价、尾端派送、市场价、客户系统、复杂 BI 看板暂缓。
+- UI 收窄:
+  - 左侧导航只保留 `AI订舱工作台 / SO识别中心 / 设置`。
+  - 首页标题改为 `AI 订舱与 SO 识别工作台`。
+  - 隐藏首屏复杂指标条、负责人筛选、红黄绿筛选入口。
+  - 动作面板只展示 `订舱邮件 / SO 识别 / 补料文件` 这条闭环相关动作。
+  - AI 面板文案改为“AI 订舱助手”,快捷 prompt 聚焦订舱邮件草稿、缺失字段和 SO 回写建议。
+- 文档新增/更新:
+  - 新增 `AGENTS.md`,明确 Agent 1/2/3 文件边界和禁做范围。
+  - 新增 `docs/booking-mvp.md`,记录当前 MVP 闭环、SO 字段、AI 订舱邮件规则。
+  - 更新 `README.md`、`docs/project-overview.md`、`docs/todo.md` 的产品定位和优先级。
+- 保持边界:
+  - 未修改 `prisma/schema.prisma`。
+  - 未实现邮件自动化底层 API。
+  - 未实现 OCR / SO 抽取逻辑。

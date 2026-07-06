@@ -155,7 +155,7 @@ export function ShipmentFieldPanel({
   reminders: ReminderChip[];
 }) {
   return (
-    <SectionCard title="提醒与字段" kicker="提醒优先级与关键单证">
+    <SectionCard title="SO 与关键字段" kicker="识别状态、提醒和待补料字段">
       <div className="mt-3 flex flex-wrap gap-2">
         {reminders.length > 0 ? (
           reminders.map((item) => (
@@ -183,8 +183,8 @@ export function ShipmentFieldPanel({
       <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">申报进度</p>
-            <p className="mt-1 text-xs text-slate-500">按节点拆分文档状态</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">SO 后续节点</p>
+            <p className="mt-1 text-xs text-slate-500">SO 识别后再推进补料和申报字段</p>
           </div>
           <FileCheck2 className="h-4 w-4 text-slate-400" />
         </div>
@@ -223,12 +223,12 @@ export function ShipmentActionPanel({
   };
 }) {
   return (
-    <SectionCard title="操作面板" kicker="建议动作在前，状态动作在后">
+    <SectionCard title="订舱与 SO 闭环" kicker="先生成邮件，再识别 SO，最后回写 Shipment">
       <div className="mt-3 grid grid-cols-1 gap-3 min-[1700px]:grid-cols-[minmax(0,0.98fr)_minmax(0,1.02fr)]">
         <div className="rounded-xl border border-cyan-200 bg-cyan-50/80 px-4 py-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-cyan-700">建议优先处理</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-cyan-700">建议下一步</p>
               <p className="mt-2 break-words text-base font-semibold text-slate-950">{recommendedAction.label}</p>
               <p className="mt-2 break-words text-sm leading-6 text-slate-700">{recommendedAction.detail}</p>
             </div>
@@ -244,7 +244,7 @@ export function ShipmentActionPanel({
             </button>
             <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60" onClick={onFollowUp}>
               <Bell className="h-4 w-4" />
-              追加催单
+              跟进回邮
             </button>
           </div>
         </div>

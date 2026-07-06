@@ -13,7 +13,6 @@ import {
   UserRound,
 } from "lucide-react";
 import {
-  MetricStrip,
   QueuePanel,
   SidebarNav,
   WorkbenchHeader,
@@ -24,7 +23,6 @@ import {
   shipments,
   statusColumns,
   summarizeShipments,
-  type AlertLevel,
   type ShipmentRecord,
 } from "@/lib/mock-data";
 import { applyShipmentAction, type ShipmentActionRequest } from "@/lib/freightflow-domain";
@@ -79,10 +77,8 @@ import {
 
 export function FreightflowWorkbenchPage() {
   const [shipmentState, setShipmentState] = useState<ShipmentRecord[]>(shipments);
-  const [activeNav, setActiveNav] = useState(mainNav[0] ?? "订舱工作台");
+  const [activeNav, setActiveNav] = useState(mainNav[0] ?? "AI订舱工作台");
   const [activeColumn, setActiveColumn] = useState(statusColumns[0]?.key ?? "waiting-release");
-  const [alertFilter, setAlertFilter] = useState<AlertLevel | "all">("all");
-  const [ownerFilter, setOwnerFilter] = useState("all");
   const [selectedShipmentId, setSelectedShipmentId] = useState(shipments[0]?.id ?? "");
   const [searchTerm, setSearchTerm] = useState("");
   const [aiInput, setAiInput] = useState<string>(quickPrompts[0]);
@@ -154,27 +150,11 @@ export function FreightflowWorkbenchPage() {
     return mapping;
   }, [shipmentState]);
 
-  const ownerOptions = useMemo(() => {
-    const owners = Array.from(new Set(shipmentState.map((shipment) => shipment.operator))).sort((a, b) =>
-      a.localeCompare(b),
-    );
-
-    return ["all", ...owners];
-  }, [shipmentState]);
-
   const visibleShipments = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
     const records = recordsForColumn.get(activeColumn) ?? [];
 
     return records.filter((shipment) => {
-      if (ownerFilter !== "all" && shipment.operator !== ownerFilter) {
-        return false;
-      }
-
-      if (alertFilter !== "all" && getAlertLevel(shipment) !== alertFilter) {
-        return false;
-      }
-
       if (!normalizedSearch) {
         return true;
       }
@@ -193,7 +173,7 @@ export function FreightflowWorkbenchPage() {
 
       return haystack.includes(normalizedSearch);
     });
-  }, [activeColumn, alertFilter, ownerFilter, recordsForColumn, searchTerm]);
+  }, [activeColumn, recordsForColumn, searchTerm]);
 
   const selectedShipment = useMemo(() => {
     return (
@@ -307,10 +287,12 @@ export function FreightflowWorkbenchPage() {
     label: DetailActionLabel;
     status: string;
   }>;
-  const recommendedActionCard = detailActions.find((item) => item.label === recommendedAction) ?? detailActions[0];
-  const actionPanelItems = detailActions.map((item) => ({
+  const focusedDetailActions = detailActions.filter((item) => ["订舱邮件", "SO 识别", "补料文件"].includes(item.label));
+  const recommendedActionCard =
+    focusedDetailActions.find((item) => item.label === recommendedAction) ?? focusedDetailActions[0] ?? detailActions[0];
+  const actionPanelItems = focusedDetailActions.map((item) => ({
     ...item,
-    highlight: item.label === recommendedAction,
+    highlight: item.label === recommendedActionCard.label,
     onClick: () => handleAction(item.label),
     statusClassName: toneClass(progressTone(item.status)),
   }));
@@ -581,8 +563,6 @@ export function FreightflowWorkbenchPage() {
 
   function handleResetQueueFilters() {
     setSearchTerm("");
-    setOwnerFilter("all");
-    setAlertFilter("all");
   }
 
   function openBookingModal(shipment: ShipmentRecord) {
@@ -795,29 +775,20 @@ export function FreightflowWorkbenchPage() {
           <WorkbenchHeader
             activeNav={activeNav}
             onPrimaryAction={() => void sendToAi(aiInput)}
-            primaryActionLabel="AI 总结"
+            primaryActionLabel="AI 生成邮件"
             onRefresh={() => void refreshWorkbenchData(true)}
             onSecondaryAction={(action) => handleAction(action)}
             selectedShipment={selectedShipment}
           />
 
-          <div className="mt-3">
-            <MetricStrip activeColumn={activeColumn} onSelectColumn={handleColumnChange} summary={summary} />
-          </div>
-
           <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-3 min-[1800px]:grid-cols-[minmax(1040px,1fr)_400px]">
             <section className="grid min-h-0 min-w-0 grid-cols-1 gap-3 xl:grid-cols-[360px_minmax(0,1fr)] 2xl:grid-cols-[380px_minmax(0,1fr)]">
               <QueuePanel
                 activeColumn={activeColumn}
-                alertFilter={alertFilter}
-                onAlertFilterChange={setAlertFilter}
                 onClearFilters={handleResetQueueFilters}
                 onColumnChange={handleColumnChange}
-                onOwnerFilterChange={setOwnerFilter}
                 onSearchChange={setSearchTerm}
                 onSelectShipment={handleSelectShipment}
-                ownerFilter={ownerFilter}
-                ownerOptions={ownerOptions}
                 recordsForColumn={recordsForColumn}
                 searchTerm={searchTerm}
                 selectedShipmentId={selectedShipment.id}

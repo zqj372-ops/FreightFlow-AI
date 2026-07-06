@@ -35,7 +35,7 @@ function getAiStateMeta(state: AiRequestState) {
     return {
       badgeClass: "border-cyan-400/30 bg-cyan-400/10 text-cyan-100",
       label: "生成中",
-      summary: "AI 正在整理当前 Shipment 的处理建议",
+      summary: "AI 正在生成订舱邮件或检查 SO 回写建议",
     };
   }
 
@@ -43,7 +43,7 @@ function getAiStateMeta(state: AiRequestState) {
     return {
       badgeClass: "border-emerald-400/30 bg-emerald-400/10 text-emerald-100",
       label: "已返回",
-      summary: "已收到最新回复，可继续追问或改写 Prompt",
+      summary: "已收到最新草稿或识别建议，可继续追问或改写 Prompt",
     };
   }
 
@@ -58,7 +58,7 @@ function getAiStateMeta(state: AiRequestState) {
   return {
     badgeClass: "border-slate-700 bg-slate-900/90 text-slate-200",
     label: "待发送",
-    summary: "选择快捷 Prompt 或直接编辑请求内容",
+    summary: "选择订舱邮件或 SO 识别 Prompt",
   };
 }
 
@@ -173,13 +173,13 @@ export function AiCopilotPanel({
               </div>
               <div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-semibold text-white">AI 副驾</p>
+                  <p className="text-sm font-semibold text-white">AI 订舱助手</p>
                   <span className="rounded-full border border-slate-700 bg-slate-900/80 px-2 py-0.5 text-[11px] text-slate-300">
-                    Shipment-aware assistant
+                    Booking draft + SO review
                   </span>
                 </div>
                 <p className="mt-1 text-xs leading-5 text-slate-400">
-                  OpenClaw bridge / 当前单柜上下文会自动注入，适合快速生成催办建议、异常总结和下一步动作。
+                  OpenClaw bridge / 当前 Shipment 上下文会自动注入，优先用于生成订舱邮件、检查缺失字段和判断 SO 回写。
                 </p>
               </div>
             </div>
@@ -223,8 +223,8 @@ export function AiCopilotPanel({
             <section className="rounded-2xl border border-slate-800/90 bg-slate-900/55 px-4 py-4">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <p className="text-sm font-semibold text-white">快捷 Prompts</p>
-                  <p className="mt-1 text-xs leading-5 text-slate-400">一键发送常见问题，也可以点选后继续改写。</p>
+                  <p className="text-sm font-semibold text-white">订舱 Prompts</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-400">一键生成邮件草稿或检查 SO 回写风险，也可以点选后继续改写。</p>
                 </div>
                 <span className="rounded-full border border-slate-700 bg-slate-950/80 px-2.5 py-1 text-[11px] text-slate-300">
                   {quickPrompts.length} 条推荐
@@ -247,7 +247,7 @@ export function AiCopilotPanel({
                       }`}
                     >
                       <span className="text-sm leading-6 break-words">{prompt}</span>
-                      <span className="text-[11px] text-slate-400">点按后立即带上下文发送</span>
+                      <span className="text-[11px] text-slate-400">点按后带当前 Shipment 上下文发送</span>
                     </button>
                   );
                 })}
@@ -258,7 +258,7 @@ export function AiCopilotPanel({
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <p className="text-sm font-semibold text-white">Prompt 编辑区</p>
-                  <p className="mt-1 text-xs leading-5 text-slate-400">发送时会自动附带当前状态、异常、下一步动作和基础单柜信息。</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-400">发送时会自动附带订舱代理、航线、柜型、SO 状态和当前动作。</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
                   <span className="rounded-full border border-slate-700 bg-slate-950/80 px-2.5 py-1 text-slate-300">
@@ -286,13 +286,13 @@ export function AiCopilotPanel({
                   onKeyDown={onAiInputKeyDown}
                   disabled={aiLoading}
                   className="mt-3 min-h-[180px] flex-1 resize-none bg-transparent text-sm leading-7 text-slate-100 outline-none placeholder:text-slate-500 disabled:cursor-not-allowed disabled:text-slate-500"
-                  placeholder="例如：总结当前柜子的异常原因，按优先级给出接下来 2 小时内要做的动作。"
+                  placeholder="例如：基于当前 Shipment 生成一封可人工确认的英文订舱邮件草稿，并列出缺失字段。"
                 />
 
                 <div className="mt-3 flex flex-col gap-3 border-t border-slate-800 pt-3 sm:flex-row sm:items-end sm:justify-between">
                   <div className="space-y-1">
                     <p className="text-xs font-medium text-slate-300">{aiStateMeta.summary}</p>
-                    <p className="text-xs leading-5 text-slate-500">发送中会暂时锁定快捷 Prompts 和编辑区，避免并发覆盖。</p>
+                    <p className="text-xs leading-5 text-slate-500">AI 只生成草稿或识别建议，发送邮件仍需人工确认。</p>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
@@ -325,7 +325,7 @@ export function AiCopilotPanel({
                   <MessageSquareQuote className="h-4 w-4 text-cyan-300" />
                   <p className="text-sm font-semibold text-white">AI 输出区</p>
                 </div>
-                <p className="mt-1 text-xs leading-5 text-slate-400">长文本会自动换行并按段落 / 列表渲染，便于直接扫描行动项。</p>
+                <p className="mt-1 text-xs leading-5 text-slate-400">草稿、缺失字段和 SO 回写建议会按段落 / 列表渲染。</p>
               </div>
 
               <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
@@ -354,7 +354,7 @@ export function AiCopilotPanel({
                   <div className="space-y-4 rounded-xl border border-cyan-400/20 bg-cyan-400/5 px-4 py-4">
                     <div className="flex items-center gap-2 text-sm text-cyan-100">
                       <LoaderCircle className="h-4 w-4 animate-spin" />
-                      AI 正在读取当前柜子的上下文并整理动作建议
+                      AI 正在读取当前 Shipment 并生成订舱/SO 建议
                     </div>
                     <div className="space-y-2">
                       <div className="h-3 w-full animate-pulse rounded-full bg-slate-800" />

@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "FreightFlow AI",
-  description: "AI Freight Operations Assistant for FCL and air shipment operations.",
+  title: "FreightFlow-AI | AI Booking and SO Recognition",
+  description: "AI booking email and shipping order recognition workbench.",
 };
 
 export default function RootLayout({

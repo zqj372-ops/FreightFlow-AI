@@ -10,7 +10,48 @@
 - **P2**:体验优化,可后续排期。
 - **P3**:长期演进,本季度不一定动。
 
-## 1. 数据层落地(P0)
+## 1. 当前 MVP 闭环(P0)
+
+当前第一优先级不再是报价、复杂看板或尾端派送,而是做完一条能帮操作节省时间的闭环:
+
+```text
+AI 生成订舱邮件
+→ SMTP 发送
+→ IMAP 同步回邮
+→ 检测 SO 附件
+→ OCR / 大模型抽取 SO 字段
+→ 高置信度结果回写 Shipment
+```
+
+### 1.1 AI 大模型自动订舱邮件(P0)
+
+- 新增 `src/lib/booking/**` 草稿上下文、prompt、validator。
+- 新增 `POST /api/booking/draft`,返回 `subject / body / to / cc / missingFields / riskNotes / canSend`。
+- AI 只生成草稿,不能绕过人工确认发送。
+- 缺起运港、目的港、柜型、柜量或预计 ETD 时,必须阻止自动发送。
+
+### 1.2 SMTP 发送 + IMAP 回邮同步(P0)
+
+- 补强当前 `src/lib/services/email/**` 或新增 `src/lib/email/**` 边界。
+- 新增 `POST /api/booking/send`,要求 `confirmed === true`。
+- 新增 `POST /api/booking/sync-replies`,拉取近期/未读回邮并识别可能的 SO 附件。
+- 发送成功后必须写 `ShipmentEmailLog` 和 `ShipmentActionLog`。
+
+### 1.3 SO OCR 与结构化抽取(P0)
+
+- 新增 `src/lib/so/**` provider 边界、extractor、validator、field mapper。
+- 新增 `POST /api/so/upload`、`/api/so/ocr`、`/api/so/extract`、`/api/so/apply-to-shipment`。
+- OCR 未配置时要返回明确 not_configured,不能让页面崩溃。
+- 低置信度字段必须人工确认,不能自动覆盖 Shipment。
+
+### 1.4 Shipment 回写(P0)
+
+- SO 识别成功后 `soStatus` 改为 `已识别`。
+- `等待放舱 / 已催放舱` 可推进到 `已放舱`。
+- 如果仍缺补料字段,下一步进入 `待补料`。
+- 每次回写必须创建 `ShipmentActionLog`。
+
+## 2. 支撑性数据层(P0/P1)
 
 源自 [handover §6.1](./handover.md#61-先做数据层落地) + §6.5。
 
@@ -41,7 +82,7 @@
 - 无数据库时写入返回 503,前端提示未持久化但保留本地演示状态。
 - 剩余验收:真实 PostgreSQL 可用后,任何前端状态推进都对应一条 log。
 
-## 2. 真实业务接入(P0/P1)
+## 3. 真实业务接入(P0/P1)
 
 源自 [handover §6.5](./handover.md#65-真实业务接入顺序建议)。
 
@@ -77,7 +118,7 @@
 - AI 副驾面板增加"历史"tab。
 - 剩余验收:用真实 OpenClaw endpoint 完成一次保存并测试;接入真实 DB 后确认每次 AI 调用都有审计记录可查,并在前端历史 tab 展示。
 
-## 3. 前端结构整理(P1)
+## 4. 前端结构整理(P1)
 
 源自 [handover §6.2 / §6.3](./handover.md#62-再做页面拆分)。
 
@@ -106,7 +147,7 @@
 - `detail-panels.tsx` 不再保留本地动作卡片实现。
 - 后续整理重点:继续将 `workbench-page.tsx` 中的状态编排拆成小 hook 或 reducer。
 
-## 4. 测试与质量(P1/P2)
+## 5. 测试与质量(P1/P2)
 
 源自 [handover §6.4](./handover.md#64-补充最基本测试)。
 
@@ -135,7 +176,7 @@
 - 将 `npm test && npm run lint && npm run build` 接入 CI。
 - 验收:任一环节失败时阻止合并 / 发布。
 
-## 5. 工程基线(P2)
+## 6. 工程基线(P2)
 
 源自 [handover §5](./handover.md#5-未完成任务)。
 
@@ -154,7 +195,7 @@
 - 当前完全无权限模型;一旦上线必须先加。
 - 最小方案:邮箱 + 邀请码 + session。
 
-## 6. 体验优化(P3)
+## 7. 体验优化(P3)
 
 源自 [handover §5](./handover.md#5-未完成任务)。
 
@@ -164,25 +205,20 @@
 - 移动端布局
 - 多语言(目前 UI 全中文)
 
-## 7. 执行顺序(下次开工建议)
+## 8. 执行顺序(下次开工建议)
 
 ```
-Day 1:
-  - [ ] 选定数据库与 ORM(NestJS + Prisma + PostgreSQL 推荐)
-  - [ ] 跑通 schema 与 migration
+Step 1:
+  - [x] Agent 1:收窄 UI + 新增 AGENTS.md + 新增 docs/booking-mvp.md
 
-Day 2:
-  - [ ] shipments / contacts / action_logs 三表 CRUD
-  - [x] 前端 fetch 接入(读接口 + 动作/联系人后台持久化尝试)
+Step 2:
+  - [ ] Agent 2:AI 订舱邮件草稿 / SMTP 发送 / IMAP 回邮同步 / SO 附件检测
 
-Day 3:
-  - [ ] BookingModal 接入 `POST /api/shipments/[shipmentId]/emails`
-  - [ ] 选定并接入真实 SMTP provider
-  - [ ] SO 上传/OCR provider 与补料 Word / Excel 生成器接入
+Step 3:
+  - [ ] Agent 3:SO 上传 / OCR provider / 大模型结构化抽取 / 高置信度回写
 
-Day 4:
-  - [ ] 纯函数单测 + AI 路由测试
-  - [ ] 部署草图 + 监控占位
+Step 4:
+  - [ ] Integration:订舱邮件发送 → 回邮发现 SO → OCR/抽取 → 回写 Shipment
 ```
 
 ---
