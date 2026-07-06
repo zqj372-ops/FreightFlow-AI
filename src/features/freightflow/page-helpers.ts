@@ -9,9 +9,9 @@ import {
 export type { ContactRecord, ContactRole, DetailActionLabel } from "@/lib/freightflow-domain";
 
 export const quickPrompts = [
-  "催当前队列里超4小时未放舱的柜子",
-  "检查这票补料还缺什么",
-  "总结异常原因并给出处理动作",
+  "生成当前 Shipment 的订舱邮件草稿",
+  "检查订舱邮件缺失字段和发送风险",
+  "根据 SO 状态给出回写 Shipment 建议",
 ] as const;
 
 export type ToastState = {

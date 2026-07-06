@@ -5,19 +5,20 @@
 
 ## 1. 项目定位
 
-FreightFlow AI 是一个面向加拿大、美国海运整柜(FCL)与空运操作的 AI 工作台 MVP。
-当前版本已完成前端业务骨架、Prisma 数据模型、基础 API、AI 代理/审计入口、邮件/文档流占位接口与最小测试基线;真实 PostgreSQL、SMTP、OCR 和文件生成仍需接入生产服务。
+FreightFlow-AI 是一个面向加拿大、美国海运整柜(FCL)与空运操作的 AI 订舱与 SO 识别工作台。
+当前版本已完成前端业务骨架、Prisma 数据模型、基础 API、AI 代理/审计入口、邮件/文档流占位接口与最小测试基线;真实 PostgreSQL、SMTP、IMAP 回邮同步、OCR 和结构化 SO 抽取仍需接入生产服务。
 
 ## 2. 业务范围与模块
 
-主操作台"订舱工作台"覆盖:
+主操作台"AI 订舱与 SO 识别工作台"覆盖:
 
-- 队列(Kanban)按状态列筛选整柜
-- 单柜详情与动作流:订舱 / 催单 / 补料 / SO 识别 / AMS / ACI / ISF / 异常标记
-- AI 副驾基于当前 shipment 给建议
-- 通讯录与订舱邮件草稿
+- 订舱任务队列按 Shipment 状态筛选
+- 单柜详情与动作流:订舱邮件 / SO 识别 / 补料文件
+- AI 订舱助手基于当前 Shipment 生成邮件草稿、检查缺失字段和给出 SO 回写建议
+- 通讯录与订舱邮件 modal
+- OpenClaw 与 IMAP/SMTP 邮箱配置
 
-左侧导航另设 6 个入口(SO识别中心 / 补料中心 / AMS/ACI/ISF / 邮件中心 / 异常中心 / 设置),当前只有"订舱工作台"激活,其它为占位。
+左侧导航只保留 3 个入口(AI订舱工作台 / SO识别中心 / 设置)。报价、尾端派送、市场价、客户系统、复杂 BI 看板暂缓。
 
 ## 3. 技术栈
 
@@ -38,6 +39,7 @@ freightflow-ai/
 │   ├── business-rules.md    # 业务规则
 │   ├── database.md          # 数据模型
 │   ├── todo.md              # 待办与优先级
+│   ├── booking-mvp.md       # 当前订舱 + SO OCR MVP 范围
 │   └── master-plan.md       # 5 个并行子项目总控计划
 ├── public/                  # 占位 SVG
 ├── src/
@@ -48,7 +50,7 @@ freightflow-ai/
 │   │   ├── globals.css
 │   │   └── favicon.ico
 │   ├── components/
-│   │   └── workbench-shell.tsx        # SidebarNav / Header / MetricStrip / QueuePanel
+│   │   └── workbench-shell.tsx        # SidebarNav / Header / QueuePanel
 │   ├── features/freightflow/
 │   │   ├── workbench-page.tsx         # 主工作台状态、派生数据与事件编排
 │   │   ├── booking-modal.tsx          # 订舱 modal 纯组件
@@ -68,6 +70,7 @@ freightflow-ai/
 │   └── migrations/
 ├── .env.example
 ├── README.md
+├── AGENTS.md
 ├── next.config.ts
 ├── package.json
 └── tsconfig.json
@@ -116,15 +119,16 @@ freightflow-ai/
 已完成:
 
 - 主页面 `/` 单页操作台
-- 左侧物流操作菜单(“设置”已接入 OpenClaw 与 IMAP/SMTP 邮箱配置,其余业务入口仍以当前工作台为主)
-- 中间 Kanban 看板(状态分列 + 搜索 + 负责人 + 告警分级筛选)
-- 右侧 AI 助手与优先事项
+- 左侧导航已收窄为 AI 订舱工作台 / SO识别中心 / 设置
+- 中间订舱任务队列(状态分列 + 关键词搜索)
+- 右侧 AI 订舱助手
 - Shipment 主模型样例数据(6 条)
 - 订舱 modal(收件人/抄送/主题/正文/通讯录/检查项)
-- AI 副驾(快捷 prompt / 自定义 / 状态徽标 / 段落列表渲染)
+- AI 订舱助手(订舱 prompt / 自定义 / 状态徽标 / 段落列表渲染)
 - `/api/ai/openclaw`(stub 模式 + 转发模式)
 - 一轮结构整理(workbench 页面下沉、BookingModal / AiCopilotPanel / detail panels 抽离、ActionTile 统一)
 - 二轮结构整理(`freightflow-domain.ts` 承接共享业务类型与 shipment 动作状态机,前端本地状态和 API 持久化共用同一套动作推进逻辑)
+- 三轮范围收窄(隐藏复杂指标/筛选/无关入口,新增 `AGENTS.md` 与 `docs/booking-mvp.md`)
 - Vitest 最小测试基线(纯函数 + OpenClaw route stub/proxy/error 分支)
 
 ## 8. 已知限制

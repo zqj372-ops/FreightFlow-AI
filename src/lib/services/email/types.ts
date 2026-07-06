@@ -44,7 +44,8 @@ export type PersistedEmailLog = {
 };
 
 export type SendShipmentEmailResult = {
+  emailLog: PersistedEmailLog | null;
   mode: "mock" | "provider";
   providerMessage: EmailProviderMessage;
-  emailLog: PersistedEmailLog;
+  persistenceWarning?: string;
 };

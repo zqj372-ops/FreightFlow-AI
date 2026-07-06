@@ -453,7 +453,7 @@ export async function persistShipmentAction(id: string, input: ShipmentActionReq
       },
     });
 
-    if (input.action === "订舱邮件" && input.subject && input.body) {
+    if (input.action === "订舱邮件" && input.subject && input.body && !input.skipEmailLog) {
       await tx.shipmentEmailLog.create({
         data: {
           shipmentId: id,

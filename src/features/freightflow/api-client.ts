@@ -1,4 +1,5 @@
 import type { ShipmentRecord } from "@/lib/mock-data";
+import type { SoApplyResult, SoExtractionResult, SoOcrResult } from "@/lib/so/so-types";
 import type { ContactRecord, DetailActionLabel } from "@/lib/freightflow-domain";
 
 import type { BookingDraft } from "./page-helpers";
@@ -6,7 +7,7 @@ import type { BookingDraft } from "./page-helpers";
 type ApiEnvelope<T> = {
   data?: T;
   error?: string;
-  source?: "database" | "mock";
+  source?: "database" | "local" | "mock";
   warning?: string;
 };
 
@@ -85,6 +86,49 @@ export type EmailConnectionTest = {
   message: string;
   ok: boolean;
   smtp?: EmailServiceTest;
+};
+
+export type BookingDraftApiResult = {
+  canSend: boolean;
+  draft: BookingDraft;
+  draftId: string | null;
+  missingFields: string[];
+  persisted: boolean;
+  prompt: string;
+  riskNotes: string[];
+  source: "local" | "openclaw";
+  warning?: string;
+};
+
+export type SoDocumentRecord = {
+  fileName: string;
+  id: string;
+  mimeType: string;
+  ocrStatus: string;
+  rawText?: string | null;
+  shipmentId: string;
+  source: string;
+};
+
+export type SoValidationResult = {
+  canAutoApply: boolean;
+  lowConfidenceFields: string[];
+  missingFields: string[];
+};
+
+export type SoExtractionApiResult = {
+  extraction: SoExtractionResult;
+  validation: SoValidationResult;
+};
+
+export type BookingReplySyncResult = {
+  configured: boolean;
+  createdDocuments: Array<{ fileName: string; shipmentId: string; soDocumentId: string | null }>;
+  matchedCount: number;
+  matches: unknown[];
+  messageCount: number;
+  syncLogId: string | null;
+  warning?: string;
 };
 
 async function readJson<T>(response: Response) {
@@ -190,6 +234,161 @@ export async function sendBookingEmail({
     const payload = await readJson<unknown>(response);
     throw new Error(payload.error ?? "Failed to send booking email.");
   }
+}
+
+export async function generateBookingDraft({
+  shipment,
+  shipmentId,
+}: {
+  shipment?: ShipmentRecord;
+  shipmentId: string;
+}) {
+  const response = await fetch("/api/booking/draft", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ shipment, shipmentId }),
+  });
+  const payload = await readJson<BookingDraftApiResult>(response);
+
+  if (!response.ok || !payload.data) {
+    throw new Error(payload.error ?? "Failed to generate booking draft.");
+  }
+
+  return payload.data;
+}
+
+export async function sendConfirmedBookingEmail({
+  draft,
+  shipmentId,
+}: {
+  draft: BookingDraft;
+  shipmentId: string;
+}) {
+  const response = await fetch("/api/booking/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      attachmentName: draft.attachmentName,
+      body: draft.body,
+      cc: draft.cc,
+      confirmed: true,
+      shipmentId,
+      subject: draft.subject,
+      to: draft.to,
+    }),
+  });
+  const payload = await readJson<unknown>(response);
+
+  if (!response.ok) {
+    throw new Error(payload.error ?? "Failed to send confirmed booking email.");
+  }
+}
+
+export async function syncBookingReplies(messages?: unknown[]) {
+  const response = await fetch("/api/booking/sync-replies", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(messages ? { messages } : {}),
+  });
+  const payload = await readJson<BookingReplySyncResult>(response);
+
+  if (!response.ok || !payload.data) {
+    throw new Error(payload.error ?? "Failed to sync booking replies.");
+  }
+
+  return payload.data;
+}
+
+export async function uploadSoDocument({
+  fileName,
+  mimeType,
+  shipmentId,
+  sourceText,
+}: {
+  fileName: string;
+  mimeType: string;
+  shipmentId: string;
+  sourceText: string;
+}) {
+  const response = await fetch("/api/so/upload", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fileName, mimeType, shipmentId, sourceText }),
+  });
+  const payload = await readJson<SoDocumentRecord>(response);
+
+  if (!response.ok || !payload.data) {
+    throw new Error(payload.error ?? "Failed to upload SO document.");
+  }
+
+  return payload.data;
+}
+
+export async function runSoOcr({
+  fileName,
+  mimeType,
+  soDocumentId,
+  sourceText,
+}: {
+  fileName: string;
+  mimeType: string;
+  soDocumentId?: string;
+  sourceText: string;
+}) {
+  const response = await fetch("/api/so/ocr", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fileName, mimeType, soDocumentId, sourceText }),
+  });
+  const payload = await readJson<SoOcrResult>(response);
+
+  if (!response.ok || !payload.data) {
+    throw new Error(payload.error ?? "Failed to run SO OCR.");
+  }
+
+  return payload.data;
+}
+
+export async function extractSoDocument({
+  rawText,
+  soDocumentId,
+}: {
+  rawText: string;
+  soDocumentId?: string;
+}) {
+  const response = await fetch("/api/so/extract", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ rawText, soDocumentId }),
+  });
+  const payload = await readJson<SoExtractionApiResult>(response);
+
+  if (!response.ok || !payload.data) {
+    throw new Error(payload.error ?? "Failed to extract SO document.");
+  }
+
+  return payload.data;
+}
+
+export async function applySoExtractionToShipment({
+  extraction,
+  shipmentId,
+}: {
+  extraction: SoExtractionResult;
+  shipmentId: string;
+}) {
+  const response = await fetch("/api/so/apply-to-shipment", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ extraction, shipmentId }),
+  });
+  const payload = await readJson<SoApplyResult & { persisted?: boolean }>(response);
+
+  if (!response.ok || !payload.data) {
+    throw new Error(payload.error ?? "Failed to apply SO extraction.");
+  }
+
+  return payload.data;
 }
 
 export async function loadOpenClawSettings() {

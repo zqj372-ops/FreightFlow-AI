@@ -149,12 +149,23 @@ export async function saveShipmentEmailLog(input: SendEmailInput, sentAt: Date |
 export async function sendShipmentEmail(input: SendEmailInput): Promise<SendShipmentEmailResult> {
   const provider = await createEmailProvider();
   const providerMessage = await provider.send(input);
-  const emailLog = await saveShipmentEmailLog(input, providerMessage.sentAt);
+  let emailLog: PersistedEmailLog | null = null;
+  let persistenceWarning: string | undefined;
+
+  try {
+    emailLog = await saveShipmentEmailLog(input, providerMessage.sentAt);
+  } catch (error) {
+    persistenceWarning =
+      error instanceof Error
+        ? `Email was sent, but ShipmentEmailLog was not persisted: ${error.message}`
+        : "Email was sent, but ShipmentEmailLog was not persisted.";
+  }
 
   return {
     mode: provider.name === "mock-local" ? "mock" : "provider",
     providerMessage,
     emailLog,
+    persistenceWarning,
   };
 }
 

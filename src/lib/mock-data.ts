@@ -286,19 +286,15 @@ export const shipments: ShipmentRecord[] = [
 ];
 
 export const mainNav = [
-  "订舱工作台",
+  "AI订舱工作台",
   "SO识别中心",
-  "补料中心",
-  "AMS/ACI/ISF",
-  "邮件中心",
-  "异常中心",
   "设置",
 ];
 
 export const aiPrompts = [
-  "帮我催所有超过4小时未放舱的柜子",
-  "帮我查看今天哪些柜子需要补料",
-  "帮我找出本周异常柜子",
+  "帮我生成当前 Shipment 的订舱邮件草稿",
+  "检查这票订舱资料还缺哪些字段",
+  "根据 SO 状态判断是否可以回写 Shipment",
 ];
 
 export const timelineRules = [

@@ -27,6 +27,7 @@ export type ShipmentActionRequest = {
   body?: string;
   cc?: string[];
   exceptionMessage?: string;
+  skipEmailLog?: boolean;
   source?: "UI" | "AI" | "SYSTEM";
   subject?: string;
   to?: string[];
