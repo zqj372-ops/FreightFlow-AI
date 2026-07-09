@@ -137,7 +137,7 @@ const navMeta: Record<
     icon: LayoutDashboard,
   },
   "设置": {
-    description: "配置 OpenClaw 与 IMAP/SMTP 邮箱服务。",
+    description: "配置 AI 大模型与 IMAP/SMTP 邮箱服务。",
     icon: Settings2,
   },
 };

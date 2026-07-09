@@ -9,7 +9,8 @@
 - 已接入 OpenClaw JSON 增强:订舱草稿和 SO 抽取在 endpoint 可用时优先用大模型,失败自动回退本地逻辑。
 - 已补强 IMAP 同步:读取正文片段和 bodyStructure 附件文件名,可检测真实回邮里的 SO 附件。
 - 已补强邮件发送返回:邮件已发但日志持久化失败时返回 warning,避免操作员误判后重复发送。
-- 当前 OCR 是可替换边界:文本/文本文件可直通识别,PDF/图片需要后续接真实 OCR provider。
+- 已新增 OCR provider HTTP JSON contract:`OCR_API_URL` 接收 `fileName / mimeType / fileBase64`,返回 `rawText` 或 `text`。
+- 已新增 `npm run verify:external`,用于最终验收 PostgreSQL、SMTP、IMAP、OCR 四项外部连接。
 
 ## 1. 已完成功能
 

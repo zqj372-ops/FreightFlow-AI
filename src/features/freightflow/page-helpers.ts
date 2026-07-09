@@ -23,6 +23,7 @@ export type BookingDraft = {
   attachmentName: string;
   body: string;
   cc: string[];
+  draftId?: string | null;
   subject: string;
   to: string[];
 };

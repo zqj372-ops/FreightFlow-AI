@@ -31,4 +31,35 @@ describe("applySoExtractionToShipment", () => {
       vesselVoyage: "OOCL Rauma 068E",
     });
   });
+
+  it("skips low-confidence fields until a human confirms them", () => {
+    const extraction = extractSoFields([
+      "SO: OOLU8791320",
+      "Carrier: OOCL",
+      "Vessel: OOCL Rauma",
+      "Voyage: 068E",
+      "ETD: 2026-06-12 23:00",
+      "POL: Yantian",
+      "POD: Vancouver",
+      "Booking Agent: New Review Desk",
+    ].join("\n"));
+    const shipment = { ...shipments[0], bookingAgent: "Old Agent", soStatus: "待识别" as const };
+
+    const withoutReview = applySoExtractionToShipment(shipment, extraction);
+    expect(withoutReview.skippedFields).toContain("bookingAgent");
+    expect(withoutReview.shipment.bookingAgent).toBe("Old Agent");
+
+    const withReview = applySoExtractionToShipment(shipment, extraction, {
+      fieldOverrides: [
+        {
+          apply: true,
+          confirmed: true,
+          fieldKey: "bookingAgent",
+          value: "New Review Desk",
+        },
+      ],
+    });
+    expect(withReview.appliedFields).toContain("bookingAgent");
+    expect(withReview.shipment.bookingAgent).toBe("New Review Desk");
+  });
 });

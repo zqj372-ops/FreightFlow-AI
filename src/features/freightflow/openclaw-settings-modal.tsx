@@ -19,6 +19,7 @@ import type {
   PublicEmailConfig,
   PublicOpenClawConfig,
 } from "@/features/freightflow/api-client";
+import { AI_PROVIDER_PRESETS, getAiProviderPreset } from "@/lib/ai-providers";
 
 export type OpenClawSettingsDraft = Omit<OpenClawSettingsPayload, "test">;
 export type EmailSettingsDraft = Omit<EmailSettingsPayload, "test">;
@@ -117,7 +118,13 @@ export function OpenClawSettingsModal({
 }: OpenClawSettingsModalProps) {
   if (!isOpen) return null;
 
-  const openClawCanSave = !openClawLoading && (!openClawDraft.enabled || openClawDraft.endpoint.trim().length > 0);
+  const selectedProvider = getAiProviderPreset(openClawDraft.provider);
+  const modelOptions = openClawDraft.models?.length ? openClawDraft.models : selectedProvider.models;
+  const hasAiKey = (openClawDraft.apiKey?.trim().length ?? 0) > 0 || Boolean(openClawSavedConfig?.apiKeyConfigured);
+  const openClawCanSave =
+    !openClawLoading &&
+    (!openClawDraft.enabled ||
+      (hasAiKey && (!selectedProvider.requiresBaseUrl || openClawDraft.endpoint.trim().length > 0)));
   const emailCanSave =
     !emailLoading &&
     (!emailDraft.enabled ||
@@ -158,7 +165,12 @@ export function OpenClawSettingsModal({
           <div className="grid min-h-[620px] grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)]">
             <aside className="border-b border-slate-200 bg-slate-50 p-3 md:border-b-0 md:border-r">
               {[
-                { key: "openclaw" as const, icon: PlugZap, label: "OpenClaw", summary: openClawSavedConfig?.enabled ? "已启用" : "未启用" },
+                {
+                  key: "openclaw" as const,
+                  icon: PlugZap,
+                  label: "AI 大模型",
+                  summary: openClawSavedConfig?.enabled ? getAiProviderPreset(openClawSavedConfig.provider).label : "Stub 模式",
+                },
                 { key: "email" as const, icon: Mail, label: "邮箱服务", summary: emailSavedConfig?.enabled ? "IMAP/SMTP 已启用" : "Mock 模式" },
               ].map((item) => {
                 const Icon = item.icon;
@@ -189,9 +201,9 @@ export function OpenClawSettingsModal({
                   <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
                     <label className="flex items-start justify-between gap-4">
                       <span>
-                        <span className="block text-sm font-semibold text-slate-900">启用 OpenClaw 代理</span>
+                        <span className="block text-sm font-semibold text-slate-900">启用 AI 大模型</span>
                         <span className="mt-1 block text-xs leading-5 text-slate-500">
-                          开启后 `/api/ai/openclaw` 会转发到下方 endpoint；关闭时返回本地 stub。
+                          填 API Key 后会自动拉取模型列表；关闭时返回本地 stub。
                         </span>
                       </span>
                       <input
@@ -203,15 +215,43 @@ export function OpenClawSettingsModal({
                     </label>
                   </div>
 
-                  <label className="block text-sm text-slate-700">
-                    <span className="mb-1.5 block text-xs font-medium text-slate-500">服务地址 Endpoint</span>
-                    <input
-                      value={openClawDraft.endpoint}
-                      onChange={(event) => onChangeOpenClaw({ ...openClawDraft, endpoint: event.target.value })}
-                      className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/10"
-                      placeholder="例如 http://127.0.0.1:8080/api/chat"
-                    />
-                  </label>
+                  <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                    <label className="block text-sm text-slate-700">
+                      <span className="mb-1.5 block text-xs font-medium text-slate-500">厂商</span>
+                      <select
+                        value={openClawDraft.provider}
+                        onChange={(event) => {
+                          const provider = getAiProviderPreset(event.target.value);
+                          onChangeOpenClaw({
+                            ...openClawDraft,
+                            endpoint: provider.requiresBaseUrl ? openClawDraft.endpoint : "",
+                            model: provider.defaultModel || provider.models[0] || "",
+                            models: provider.models,
+                            provider: provider.id,
+                          });
+                        }}
+                        className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/10"
+                      >
+                        {AI_PROVIDER_PRESETS.map((provider) => (
+                          <option key={provider.id} value={provider.id}>
+                            {provider.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="block text-sm text-slate-700">
+                      <span className="mb-1.5 block text-xs font-medium text-slate-500">
+                        Base URL{selectedProvider.requiresBaseUrl ? "" : "（可选覆盖）"}
+                      </span>
+                      <input
+                        value={openClawDraft.endpoint}
+                        onChange={(event) => onChangeOpenClaw({ ...openClawDraft, endpoint: event.target.value })}
+                        className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/10"
+                        placeholder={selectedProvider.baseUrl || "https://api.example.com/v1"}
+                      />
+                    </label>
+                  </div>
 
                   <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_180px]">
                     <label className="block text-sm text-slate-700">
@@ -222,7 +262,7 @@ export function OpenClawSettingsModal({
                           onChange={(event) => onChangeOpenClaw({ ...openClawDraft, apiKey: event.target.value })}
                           type={showOpenClawApiKey ? "text" : "password"}
                           className="min-w-0 flex-1 px-3 text-sm outline-none"
-                          placeholder={openClawSavedConfig?.apiKeyConfigured ? "已保存密钥；留空将清空" : "可选 Bearer Token"}
+                          placeholder={openClawSavedConfig?.apiKeyConfigured ? "已保存密钥；留空沿用" : "填写后保存会自动拉取模型"}
                         />
                         <button
                           type="button"
@@ -250,26 +290,43 @@ export function OpenClawSettingsModal({
                   </div>
 
                   <label className="block text-sm text-slate-700">
-                    <span className="mb-1.5 block text-xs font-medium text-slate-500">模型名</span>
-                    <input
-                      value={openClawDraft.model}
-                      onChange={(event) => onChangeOpenClaw({ ...openClawDraft, model: event.target.value })}
-                      className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/10"
-                      placeholder="可选，例如 openclaw-default"
-                    />
+                    <span className="mb-1.5 block text-xs font-medium text-slate-500">模型</span>
+                    {modelOptions.length > 0 ? (
+                      <select
+                        value={openClawDraft.model}
+                        onChange={(event) => onChangeOpenClaw({ ...openClawDraft, model: event.target.value })}
+                        className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/10"
+                      >
+                        {!modelOptions.includes(openClawDraft.model) && openClawDraft.model ? (
+                          <option value={openClawDraft.model}>{openClawDraft.model}</option>
+                        ) : null}
+                        {modelOptions.map((model) => (
+                          <option key={model} value={model}>
+                            {model}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        value={openClawDraft.model}
+                        onChange={(event) => onChangeOpenClaw({ ...openClawDraft, model: event.target.value })}
+                        className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/10"
+                        placeholder="填写模型名"
+                      />
+                    )}
                   </label>
 
                   <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-600 sm:grid-cols-3">
                     <div><p className="font-medium text-slate-900">当前状态</p><p className="mt-1">{openClawSavedConfig?.enabled ? "已启用" : "未启用"}</p></div>
                     <div><p className="font-medium text-slate-900">密钥</p><p className="mt-1">{openClawSavedConfig?.apiKeyConfigured ? "已配置" : "未配置"}</p></div>
-                    <div><p className="font-medium text-slate-900">最近保存</p><p className="mt-1">{formatUpdatedAt(openClawSavedConfig?.updatedAt ?? null)}</p></div>
+                    <div><p className="font-medium text-slate-900">模型数</p><p className="mt-1">{modelOptions.length || "待获取"}</p></div>
                   </div>
 
                   <ErrorBanner error={openClawError} />
                   <ResultBanner result={openClawTestResult} />
 
                   <div className="flex flex-col-reverse gap-2 border-t border-slate-200 pt-4 sm:flex-row sm:justify-end">
-                    <button type="button" onClick={() => onSaveOpenClaw(false)} disabled={!openClawCanSave} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-cyan-200 bg-cyan-50 px-4 text-sm font-medium text-cyan-800 transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"><Save className="h-4 w-4" />保存配置</button>
+                    <button type="button" onClick={() => onSaveOpenClaw(false)} disabled={!openClawCanSave} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-cyan-200 bg-cyan-50 px-4 text-sm font-medium text-cyan-800 transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"><Save className="h-4 w-4" />保存并获取模型</button>
                     <button type="button" onClick={() => onSaveOpenClaw(true)} disabled={!openClawCanSave} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-cyan-600 px-4 text-sm font-medium text-white transition hover:bg-cyan-700 disabled:cursor-not-allowed disabled:bg-cyan-300">{openClawLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <PlugZap className="h-4 w-4" />}保存并测试</button>
                   </div>
                 </div>

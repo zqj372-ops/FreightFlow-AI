@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 
+import { requestAiModel } from "@/lib/ai-model-client";
+import { resolveAiBaseUrl } from "@/lib/ai-providers";
 import { readOpenClawConfig } from "@/lib/openclaw-config";
 import { prisma } from "@/lib/prisma";
 
@@ -14,19 +16,12 @@ type AiAuditInput = {
   prompt: string;
   shipmentId?: string;
   context?: Record<string, unknown>;
-  provider: "stub" | "openclaw";
+  provider: string;
   endpoint?: string;
 };
 
 function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "OpenClaw request failed";
-}
-
-function getReplyText(data: unknown) {
-  if (!data || typeof data !== "object") return null;
-
-  const reply = (data as { reply?: unknown }).reply;
-  return typeof reply === "string" ? reply : null;
+  return error instanceof Error ? error.message : "AI model request failed";
 }
 
 function getRequestContext(context: Record<string, unknown> | undefined): Prisma.InputJsonValue {
@@ -84,7 +79,6 @@ async function completeAiAudit(
 export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => ({}))) as OpenClawRequest;
   const config = await readOpenClawConfig();
-  const endpoint = config.enabled ? config.endpoint : "";
 
   if (!body.prompt) {
     return NextResponse.json({ error: "Missing prompt" }, { status: 400 });
@@ -92,14 +86,14 @@ export async function POST(request: NextRequest) {
 
   const startedAt = Date.now();
 
-  if (!endpoint) {
+  if (!config.enabled) {
     const auditId = await startAiAudit({
       prompt: body.prompt,
       shipmentId: body.shipmentId,
       context: body.context,
       provider: "stub",
     });
-    const reply = `已收到指令：${body.prompt}。当前为本地占位接口，配置 OPENCLAW_API_URL 后即可转发到服务器内的 OpenClaw。`;
+    const reply = `已收到指令：${body.prompt}。当前为本地占位接口，配置 AI 大模型 API Key 后即可调用真实模型。`;
 
     await completeAiAudit(auditId, {
       status: "SUCCESS",
@@ -109,7 +103,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       mode: "stub",
-      message: "OpenClaw endpoint is not configured yet.",
+      message: "AI model provider is not configured yet.",
       reply,
       forwarded: false,
       shipmentId: body.shipmentId ?? null,
@@ -120,39 +114,24 @@ export async function POST(request: NextRequest) {
     prompt: body.prompt,
     shipmentId: body.shipmentId,
     context: body.context,
-    provider: "openclaw",
-    endpoint,
+    provider: config.provider,
+    endpoint: resolveAiBaseUrl(config.provider, config.endpoint),
   });
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
 
   try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(config.apiKey
-          ? { Authorization: `Bearer ${config.apiKey}` }
-          : {}),
-      },
-      body: JSON.stringify({
-        prompt: body.prompt,
-        shipmentId: body.shipmentId,
-        context: body.context ?? {},
-        model: config.model || undefined,
-        source: "freightflow-ai",
-      }),
-      cache: "no-store",
+    const result = await requestAiModel(config, {
+      context: { ...(body.context ?? {}), shipmentId: body.shipmentId },
+      prompt: body.prompt,
       signal: controller.signal,
     });
-
-    const data = await response.json().catch(() => ({}));
-    const reply = getReplyText(data);
+    const reply = result.reply;
     const responseTimeMs = Date.now() - startedAt;
 
-    if (!response.ok) {
-      const errorMessage = `OpenClaw returned HTTP ${response.status}`;
+    if (!result.ok) {
+      const errorMessage = `AI provider returned HTTP ${result.status}`;
 
       await completeAiAudit(auditId, {
         status: "ERROR",
@@ -165,8 +144,8 @@ export async function POST(request: NextRequest) {
         {
           mode: "proxy",
           forwarded: true,
-          status: response.status,
-          data,
+          status: result.status,
+          data: result.data,
           error: errorMessage,
         },
       );
@@ -180,9 +159,14 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       mode: "proxy",
+      provider: config.provider,
       forwarded: true,
-      status: response.status,
-      data,
+      status: result.status,
+      reply,
+      data: {
+        raw: result.data,
+        reply,
+      },
     });
   } catch (error) {
     const errorMessage = getErrorMessage(error);

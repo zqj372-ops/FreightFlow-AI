@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bell,
   Clock3,
@@ -46,6 +46,7 @@ import {
   loadContactsFromApi,
   loadEmailSettings,
   loadOpenClawSettings,
+  loadSoDocuments,
   loadShipmentsFromApi,
   applySoExtractionToShipment,
   extractSoDocument,
@@ -65,12 +66,24 @@ import {
   type OpenClawConnectionTest,
   type PublicOpenClawConfig,
 } from "@/features/freightflow/api-client";
-import type { SoApplyResult, SoExtractionResult } from "@/lib/so/so-types";
+import type {
+  SoApplyResult,
+  SoDocumentCenterRecord,
+  SoDocumentStatusBucket,
+  SoExtractionResult,
+  SoFieldKey,
+  SoFieldReviewPatch,
+} from "@/lib/so/so-types";
 import {
   AiCopilotPanel,
   type AiRequestState,
 } from "@/features/freightflow/ai-copilot-panel";
 import { SoExtractResultPanel } from "@/features/booking/so-extract-result-panel";
+import {
+  buildSoReviewDraft,
+  SoRecognitionCenter,
+  type SoReviewDraft,
+} from "@/features/booking/so-recognition-center";
 import { SoUploadPanel, type SoUploadDraft } from "@/features/booking/so-upload-panel";
 import { BookingModal } from "@/features/freightflow/booking-modal";
 import {
@@ -129,6 +142,7 @@ export function FreightflowWorkbenchPage() {
   const [ccInput, setCcInput] = useState("");
   const [bookingSending, setBookingSending] = useState(false);
   const [soDraft, setSoDraft] = useState<SoUploadDraft>(() => ({
+    fileBase64: undefined,
     fileName: `${shipments[0]?.batchNo ?? "shipment"}-so.txt`,
     mimeType: "text/plain",
     sourceText: "",
@@ -139,6 +153,14 @@ export function FreightflowWorkbenchPage() {
   const [soExtraction, setSoExtraction] = useState<SoExtractionResult | null>(null);
   const [soValidation, setSoValidation] = useState<SoValidationResult | null>(null);
   const [soApplyResult, setSoApplyResult] = useState<(SoApplyResult & { persisted?: boolean }) | null>(null);
+  const [currentSoDocumentId, setCurrentSoDocumentId] = useState<string | null>(null);
+  const [soCenterDocuments, setSoCenterDocuments] = useState<SoDocumentCenterRecord[]>([]);
+  const [soCenterLoading, setSoCenterLoading] = useState(false);
+  const [activeSoBucket, setActiveSoBucket] = useState<SoDocumentStatusBucket>("review");
+  const [selectedSoDocumentId, setSelectedSoDocumentId] = useState<string | null>(null);
+  const [soReviewDraft, setSoReviewDraft] = useState<SoReviewDraft>({});
+  const activeSoBucketRef = useRef<SoDocumentStatusBucket>("review");
+  const selectedSoDocumentIdRef = useRef<string | null>(null);
   const [contactState, setContactState] = useState<ContactRecord[]>(() => buildContacts(shipments[0]));
   const [contactDraft, setContactDraft] = useState<ContactDraft>({
     email: "",
@@ -152,6 +174,7 @@ export function FreightflowWorkbenchPage() {
     endpoint: "",
     enabled: false,
     model: "",
+    provider: "openai",
     timeoutMs: 30000,
   });
   const [openClawSettingsLoading, setOpenClawSettingsLoading] = useState(false);
@@ -232,6 +255,14 @@ export function FreightflowWorkbenchPage() {
 
     return shipmentState.find((shipment) => shipment.id === bookingShipmentId) ?? null;
   }, [bookingShipmentId, shipmentState]);
+
+  const selectedSoDocument = useMemo(() => {
+    return (
+      soCenterDocuments.find((document) => document.id === selectedSoDocumentId) ??
+      soCenterDocuments.find((document) => document.statusBucket === activeSoBucket) ??
+      null
+    );
+  }, [activeSoBucket, selectedSoDocumentId, soCenterDocuments]);
 
   const selectedShipmentLevel = getAlertLevel(selectedShipment);
   const fieldItems = [
@@ -365,6 +396,50 @@ export function FreightflowWorkbenchPage() {
     { label: "附件", value: bookingDraft.attachmentName },
   ] satisfies ReadonlyArray<DetailItem>;
 
+  const selectSoDocumentId = useCallback((documentId: string | null) => {
+    selectedSoDocumentIdRef.current = documentId;
+    setSelectedSoDocumentId(documentId);
+  }, []);
+
+  const selectSoBucket = useCallback((bucket: SoDocumentStatusBucket) => {
+    activeSoBucketRef.current = bucket;
+    setActiveSoBucket(bucket);
+  }, []);
+
+  const refreshSoDocuments = useCallback(async (showToast = false) => {
+    setSoCenterLoading(true);
+
+    try {
+      const result = await loadSoDocuments();
+      const currentSelectedId = selectedSoDocumentIdRef.current;
+      const nextSelectedId =
+        currentSelectedId && result.data.some((document) => document.id === currentSelectedId)
+          ? currentSelectedId
+          : result.data.find((document) => document.statusBucket === activeSoBucketRef.current)?.id ?? result.data[0]?.id ?? null;
+      const nextSelectedDocument = result.data.find((document) => document.id === nextSelectedId) ?? null;
+
+      setSoCenterDocuments(result.data);
+      selectSoDocumentId(nextSelectedId);
+      setSoReviewDraft(buildSoReviewDraft(nextSelectedDocument));
+
+      if (showToast) {
+        setToast({
+          tone: result.source === "database" ? "success" : "info",
+          message: result.warning ?? (result.source === "database" ? "SO 识别中心已刷新" : "已载入 SO mock 队列"),
+        });
+      }
+    } catch (error) {
+      if (showToast) {
+        setToast({
+          tone: "info",
+          message: error instanceof Error ? error.message : "SO 文档刷新失败。",
+        });
+      }
+    } finally {
+      setSoCenterLoading(false);
+    }
+  }, [selectSoDocumentId]);
+
   const refreshWorkbenchData = useCallback(async (showToast = false) => {
     try {
       const [shipmentResult, contactResult] = await Promise.all([
@@ -418,10 +493,11 @@ export function FreightflowWorkbenchPage() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void refreshWorkbenchData();
+      void refreshSoDocuments();
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [refreshWorkbenchData]);
+  }, [refreshSoDocuments, refreshWorkbenchData]);
 
   useEffect(() => {
     void Promise.allSettled([loadOpenClawSettings(), loadEmailSettings()]).then(([openClawResult, emailResult]) => {
@@ -433,6 +509,8 @@ export function FreightflowWorkbenchPage() {
           endpoint: config.endpoint,
           enabled: config.enabled,
           model: config.model,
+          models: config.models,
+          provider: config.provider,
           timeoutMs: config.timeoutMs,
         });
       } else {
@@ -518,6 +596,7 @@ export function FreightflowWorkbenchPage() {
     if (!nextShipment) return;
 
     setSoDraft({
+      fileBase64: undefined,
       fileName: `${nextShipment.batchNo}-so.txt`,
       mimeType: "text/plain",
       sourceText: "",
@@ -526,6 +605,7 @@ export function FreightflowWorkbenchPage() {
     setSoExtraction(null);
     setSoValidation(null);
     setSoApplyResult(null);
+    setCurrentSoDocumentId(null);
   }
 
   function handleColumnChange(columnKey: string) {
@@ -566,15 +646,17 @@ export function FreightflowWorkbenchPage() {
         endpoint: result.config.endpoint,
         enabled: result.config.enabled,
         model: result.config.model,
+        models: result.config.models,
+        provider: result.config.provider,
         timeoutMs: result.config.timeoutMs,
       });
       setOpenClawTestResult(result.test ?? null);
       setToast({
         tone: result.test?.ok === false ? "info" : "success",
-        message: test ? result.test?.message ?? "OpenClaw 配置已保存" : "OpenClaw 配置已保存",
+        message: test ? result.test?.message ?? "AI 大模型配置已保存" : "AI 大模型配置已保存",
       });
     } catch (error) {
-      setOpenClawSettingsError(error instanceof Error ? error.message : "OpenClaw 配置保存失败");
+      setOpenClawSettingsError(error instanceof Error ? error.message : "AI 大模型配置保存失败");
     } finally {
       setOpenClawSettingsLoading(false);
     }
@@ -636,7 +718,7 @@ export function FreightflowWorkbenchPage() {
 
     try {
       const result = await generateBookingDraft({ shipment, shipmentId: shipment.id });
-      setBookingDraft(result.draft);
+      setBookingDraft({ ...result.draft, draftId: result.draftId });
       setToast({
         tone: result.canSend ? "success" : "info",
         message: result.warning ?? (result.canSend ? "AI 订舱邮件草稿已生成" : "草稿已生成，请补齐发送检查项"),
@@ -799,9 +881,11 @@ export function FreightflowWorkbenchPage() {
         shipmentId: selectedShipment.id,
         sourceText: soDraft.sourceText,
       });
+      setCurrentSoDocumentId(document.id);
       setSoStatusText("OCR 识别中...");
 
       const ocr = await runSoOcr({
+        fileBase64: soDraft.fileBase64,
         fileName: document.fileName,
         mimeType: document.mimeType,
         soDocumentId: document.id,
@@ -821,6 +905,7 @@ export function FreightflowWorkbenchPage() {
       setSoExtraction(result.extraction);
       setSoValidation(result.validation);
       setSoStatusText(`已识别 ${result.extraction.fields.filter((field) => field.value).length} 个字段。`);
+      void refreshSoDocuments();
       setToast({
         tone: result.validation.canAutoApply ? "success" : "info",
         message: result.validation.canAutoApply ? "SO 已识别，可自动回写" : "SO 已识别，部分字段需要复核",
@@ -845,6 +930,7 @@ export function FreightflowWorkbenchPage() {
       const result = await applySoExtractionToShipment({
         extraction: soExtraction,
         shipmentId: selectedShipment.id,
+        soDocumentId: currentSoDocumentId,
       });
 
       setSoApplyResult(result);
@@ -856,6 +942,7 @@ export function FreightflowWorkbenchPage() {
         tone: "success",
         message: `SO 已回写 ${result.appliedFields.length} 个字段`,
       });
+      void refreshSoDocuments();
     } catch (error) {
       setToast({
         tone: "info",
@@ -879,6 +966,7 @@ export function FreightflowWorkbenchPage() {
           result.warning ??
           `已同步 ${result.messageCount} 封回邮，匹配 ${result.matchedCount} 封，发现 ${result.createdDocuments.length} 个 SO 附件`,
       });
+      if (result.createdDocuments.length > 0) void refreshSoDocuments();
     } catch (error) {
       setToast({
         tone: "info",
@@ -891,6 +979,7 @@ export function FreightflowWorkbenchPage() {
 
   function handleLoadSampleSo() {
     setSoDraft({
+      fileBase64: undefined,
       fileName: `${selectedShipment.batchNo}-so.txt`,
       mimeType: "text/plain",
       sourceText: buildSampleSoText(selectedShipment),
@@ -901,10 +990,127 @@ export function FreightflowWorkbenchPage() {
     setSoStatusText("示例 SO 已载入。");
   }
 
+  function handleSoBucketChange(bucket: SoDocumentStatusBucket) {
+    selectSoBucket(bucket);
+    const nextDocument = soCenterDocuments.find((document) => document.statusBucket === bucket) ?? null;
+    selectSoDocumentId(nextDocument?.id ?? null);
+    setSoReviewDraft(buildSoReviewDraft(nextDocument));
+  }
+
+  function handleSelectSoDocument(documentId: string) {
+    const document = soCenterDocuments.find((item) => item.id === documentId) ?? null;
+    selectSoDocumentId(documentId);
+    setSoReviewDraft(buildSoReviewDraft(document));
+
+    if (document?.shipmentId) {
+      setSelectedShipmentId(document.shipmentId);
+    }
+  }
+
+  function handleSoReviewDraftChange(
+    fieldKey: SoFieldKey,
+    patch: { apply?: boolean; confirmed?: boolean; value?: string },
+  ) {
+    setSoReviewDraft((current) => {
+      const existing = current[fieldKey] ?? { apply: false, confirmed: false, value: "" };
+
+      return {
+        ...current,
+        [fieldKey]: {
+          ...existing,
+          ...patch,
+        },
+      };
+    });
+  }
+
+  async function handleApplySoReview() {
+    if (!selectedSoDocument || soWorking || selectedSoDocument.statusBucket !== "review") return;
+
+    const fields = selectedSoDocument.extractedFields.filter((field) => field.value);
+    const fieldOverrides: SoFieldReviewPatch[] = fields.map((field) => {
+      const draft = soReviewDraft[field.fieldKey] ?? {
+        apply: false,
+        confirmed: false,
+        value: field.value ?? "",
+      };
+
+      return {
+        apply: draft.apply,
+        confidence: draft.confirmed ? Math.max(field.confidence, 0.99) : field.confidence,
+        confirmed: draft.confirmed,
+        fieldKey: field.fieldKey,
+        sourceText: draft.confirmed ? "人工复核" : field.sourceText,
+        value: draft.value,
+      };
+    });
+    const confirmedFieldKeys = fieldOverrides
+      .filter((field) => field.apply && field.confirmed)
+      .map((field) => field.fieldKey);
+    const extraction: SoExtractionResult = {
+      confidence: selectedSoDocument.confidence ?? 0,
+      fields: selectedSoDocument.extractedFields,
+      rawText: selectedSoDocument.rawText ?? "",
+      status: selectedSoDocument.reviewFields.length > 0 ? "NEED_REVIEW" : "EXTRACTED",
+    };
+
+    setSoWorking(true);
+
+    try {
+      const result = await applySoExtractionToShipment({
+        confirmedFieldKeys,
+        extraction,
+        fieldOverrides,
+        shipmentId: selectedSoDocument.shipmentId,
+        soDocumentId: selectedSoDocument.id,
+      });
+
+      setShipmentState((current) =>
+        current.map((shipment) => (shipment.id === result.shipment.id ? result.shipment : shipment)),
+      );
+      setSoCenterDocuments((current) =>
+        current.map((document) =>
+          document.id === selectedSoDocument.id
+            ? {
+                ...document,
+                appliedAt: result.appliedAt ?? new Date().toISOString(),
+                appliedFields: result.appliedFields,
+                reviewFields: [],
+                shipment: result.shipment,
+                statusBucket: "applied",
+                statusLabel: "已回写",
+              }
+            : document,
+        ),
+      );
+      setSelectedShipmentId(result.shipment.id);
+      selectSoBucket("applied");
+      selectSoDocumentId(selectedSoDocument.id);
+      setToast({
+        tone: "success",
+        message: `SO 复核已确认，回写 ${result.appliedFields.length} 个字段`,
+      });
+      if (result.persisted) void refreshSoDocuments();
+    } catch (error) {
+      setToast({
+        tone: "info",
+        message: error instanceof Error ? error.message : "SO 复核回写失败。",
+      });
+    } finally {
+      setSoWorking(false);
+    }
+  }
+
   function handleAction(action: DetailActionLabel) {
     switch (action) {
       case "订舱邮件":
         void openBookingModal(selectedShipment);
+        break;
+      case "SO 识别":
+        setActiveNav("SO识别中心");
+        selectSoBucket("review");
+        setToast({ tone: "info", message: "已打开 SO 识别中心，可复核低置信字段后回写 Shipment。" });
+        void refreshSoDocuments();
         break;
       default:
         const result = applyLocalShipmentAction(action);
@@ -992,102 +1198,122 @@ export function FreightflowWorkbenchPage() {
             activeNav={activeNav}
             onPrimaryAction={() => void openBookingModal(selectedShipment)}
             primaryActionLabel="AI 生成邮件"
-            onRefresh={() => void refreshWorkbenchData(true)}
+            onRefresh={() => {
+              void refreshWorkbenchData(true);
+              if (activeNav === "SO识别中心") void refreshSoDocuments(true);
+            }}
             onSecondaryAction={(action) => handleAction(action)}
             selectedShipment={selectedShipment}
           />
 
-          <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-3 min-[1800px]:grid-cols-[minmax(1040px,1fr)_400px]">
-            <section className="grid min-h-0 min-w-0 grid-cols-1 gap-3 xl:grid-cols-[360px_minmax(0,1fr)] 2xl:grid-cols-[380px_minmax(0,1fr)]">
-              <QueuePanel
-                activeColumn={activeColumn}
-                onClearFilters={handleResetQueueFilters}
-                onColumnChange={handleColumnChange}
-                onSearchChange={setSearchTerm}
-                onSelectShipment={handleSelectShipment}
-                recordsForColumn={recordsForColumn}
-                searchTerm={searchTerm}
-                selectedShipmentId={selectedShipment.id}
-                visibleShipments={visibleShipments}
+          {activeNav === "SO识别中心" ? (
+            <div className="mt-3 flex min-h-0 flex-1">
+              <SoRecognitionCenter
+                activeBucket={activeSoBucket}
+                applying={soWorking}
+                documents={soCenterDocuments}
+                loading={soCenterLoading}
+                onApplyReview={() => void handleApplySoReview()}
+                onBucketChange={handleSoBucketChange}
+                onRefresh={() => void refreshSoDocuments(true)}
+                onReviewDraftChange={handleSoReviewDraftChange}
+                onSelectDocument={handleSelectSoDocument}
+                reviewDraft={soReviewDraft}
+                selectedDocument={selectedSoDocument}
               />
-
-              <div className="grid min-h-0 min-w-0 grid-cols-1 gap-3 xl:grid-rows-[auto_auto_minmax(0,1fr)]">
-                <ShipmentDetailPanel
-                  aiSummary={selectedShipment.aiSummary}
-                  batchNo={selectedShipment.batchNo}
-                  containerNo={selectedShipment.containerNo}
-                  cutoffBadgeClassName={toneClass(cutoffTone(selectedShipment.hoursToCutoff))}
-                  cutoffLabel={`截补料 ${selectedShipment.hoursToCutoff}h`}
-                  detailItems={shipmentHeaderItems}
-                  nextAction={selectedShipment.nextAction}
-                  soNo={selectedShipment.soNo}
-                  status={selectedShipment.status}
-                  statusLevel={selectedShipmentLevel}
-                  vesselVoyage={selectedShipment.vesselVoyage}
+            </div>
+          ) : (
+            <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-3 min-[1800px]:grid-cols-[minmax(1040px,1fr)_400px]">
+              <section className="grid min-h-0 min-w-0 grid-cols-1 gap-3 xl:grid-cols-[360px_minmax(0,1fr)] 2xl:grid-cols-[380px_minmax(0,1fr)]">
+                <QueuePanel
+                  activeColumn={activeColumn}
+                  onClearFilters={handleResetQueueFilters}
+                  onColumnChange={handleColumnChange}
+                  onSearchChange={setSearchTerm}
+                  onSelectShipment={handleSelectShipment}
+                  recordsForColumn={recordsForColumn}
+                  searchTerm={searchTerm}
+                  selectedShipmentId={selectedShipment.id}
+                  visibleShipments={visibleShipments}
                 />
 
-                <ShipmentFieldPanel
-                  fieldItems={fieldItems}
-                  progressItems={documentProgressItems}
-                  reminders={reminderChips}
-                />
-
-                <div className="grid min-h-0 min-w-0 grid-cols-1 gap-3">
-                  <ShipmentActionPanel
-                    actionItems={actionPanelItems}
+                <div className="grid min-h-0 min-w-0 grid-cols-1 gap-3 xl:grid-rows-[auto_auto_minmax(0,1fr)]">
+                  <ShipmentDetailPanel
+                    aiSummary={selectedShipment.aiSummary}
+                    batchNo={selectedShipment.batchNo}
+                    containerNo={selectedShipment.containerNo}
+                    cutoffBadgeClassName={toneClass(cutoffTone(selectedShipment.hoursToCutoff))}
+                    cutoffLabel={`截补料 ${selectedShipment.hoursToCutoff}h`}
+                    detailItems={shipmentHeaderItems}
                     nextAction={selectedShipment.nextAction}
-                    onFollowUp={() => handleAction("催单提醒")}
-                    onRunRecommended={() => handleAction(recommendedActionCard.label)}
-                    recommendedAction={{
-                      detail: recommendedActionCard.detail,
-                      label: recommendedActionCard.label,
-                      status: recommendedActionCard.status,
-                      statusClassName: toneClass(progressTone(recommendedActionCard.status)),
-                    }}
+                    soNo={selectedShipment.soNo}
+                    status={selectedShipment.status}
+                    statusLevel={selectedShipmentLevel}
+                    vesselVoyage={selectedShipment.vesselVoyage}
                   />
 
-                  <SoUploadPanel
-                    disabled={soWorking}
-                    draft={soDraft}
-                    onChange={setSoDraft}
-                    onLoadSample={handleLoadSampleSo}
-                    onRun={() => void handleRunSoExtraction()}
-                    onSyncReplies={() => void handleSyncReplies()}
-                    selectedBatchNo={selectedShipment.batchNo}
-                    statusText={soStatusText}
-                    syncing={soReplySyncing}
+                  <ShipmentFieldPanel
+                    fieldItems={fieldItems}
+                    progressItems={documentProgressItems}
+                    reminders={reminderChips}
                   />
 
-                  <SoExtractResultPanel
-                    applyResult={soApplyResult}
-                    extraction={soExtraction}
-                    onApply={() => void handleApplySoExtraction()}
-                    validation={soValidation}
-                    working={soWorking}
-                  />
+                  <div className="grid min-h-0 min-w-0 grid-cols-1 gap-3">
+                    <ShipmentActionPanel
+                      actionItems={actionPanelItems}
+                      nextAction={selectedShipment.nextAction}
+                      onFollowUp={() => handleAction("催单提醒")}
+                      onRunRecommended={() => handleAction(recommendedActionCard.label)}
+                      recommendedAction={{
+                        detail: recommendedActionCard.detail,
+                        label: recommendedActionCard.label,
+                        status: recommendedActionCard.status,
+                        statusClassName: toneClass(progressTone(recommendedActionCard.status)),
+                      }}
+                    />
 
+                    <SoUploadPanel
+                      disabled={soWorking}
+                      draft={soDraft}
+                      onChange={setSoDraft}
+                      onLoadSample={handleLoadSampleSo}
+                      onRun={() => void handleRunSoExtraction()}
+                      onSyncReplies={() => void handleSyncReplies()}
+                      selectedBatchNo={selectedShipment.batchNo}
+                      statusText={soStatusText}
+                      syncing={soReplySyncing}
+                    />
+
+                    <SoExtractResultPanel
+                      applyResult={soApplyResult}
+                      extraction={soExtraction}
+                      onApply={() => void handleApplySoExtraction()}
+                      validation={soValidation}
+                      working={soWorking}
+                    />
+                  </div>
                 </div>
-              </div>
-            </section>
+              </section>
 
-            <AiCopilotPanel
-              aiInput={aiInput}
-              aiLastCompletedAt={aiLastCompletedAt}
-              aiLastPrompt={aiLastPrompt}
-              aiLastReplyLength={aiLastReplyLength}
-              aiReply={aiReply}
-              aiRequestState={aiRequestState}
-              onAiInputChange={setAiInput}
-              onAiInputKeyDown={handleAiInputKeyDown}
-              onQuickPrompt={(prompt) => {
-                setAiInput(prompt);
-                void sendToAi(prompt);
-              }}
-              onResetPrompt={() => setAiInput(quickPrompts[0])}
-              onSend={() => void sendToAi(aiInput)}
-              selectedShipment={selectedShipment}
-            />
-          </div>
+              <AiCopilotPanel
+                aiInput={aiInput}
+                aiLastCompletedAt={aiLastCompletedAt}
+                aiLastPrompt={aiLastPrompt}
+                aiLastReplyLength={aiLastReplyLength}
+                aiReply={aiReply}
+                aiRequestState={aiRequestState}
+                onAiInputChange={setAiInput}
+                onAiInputKeyDown={handleAiInputKeyDown}
+                onQuickPrompt={(prompt) => {
+                  setAiInput(prompt);
+                  void sendToAi(prompt);
+                }}
+                onResetPrompt={() => setAiInput(quickPrompts[0])}
+                onSend={() => void sendToAi(aiInput)}
+                selectedShipment={selectedShipment}
+              />
+            </div>
+          )}
         </section>
       </div>
 

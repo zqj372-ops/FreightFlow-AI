@@ -33,6 +33,10 @@ describe("POST /api/ai/openclaw", () => {
 
   afterEach(() => {
     process.chdir(originalCwd);
+    delete process.env.AI_API_KEY;
+    delete process.env.AI_BASE_URL;
+    delete process.env.AI_MODEL;
+    delete process.env.AI_PROVIDER;
     delete process.env.OPENCLAW_API_URL;
     delete process.env.OPENCLAW_API_KEY;
     vi.unstubAllGlobals();
@@ -59,10 +63,12 @@ describe("POST /api/ai/openclaw", () => {
   });
 
   it("forwards configured requests without calling a real OpenClaw service", async () => {
-    process.env.OPENCLAW_API_URL = "https://openclaw.example.test/run";
-    process.env.OPENCLAW_API_KEY = "secret-token";
+    process.env.AI_PROVIDER = "openai";
+    process.env.AI_API_KEY = "secret-token";
+    process.env.AI_MODEL = "gpt-4.1-mini";
+    const raw = { choices: [{ message: { content: "ok" } }] };
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ reply: "ok" }), {
+      new Response(JSON.stringify(raw), {
         status: 201,
         headers: { "Content-Type": "application/json" },
       }),
@@ -78,12 +84,14 @@ describe("POST /api/ai/openclaw", () => {
     expect(response.status).toBe(200);
     expect(json).toEqual({
       mode: "proxy",
+      provider: "openai",
       forwarded: true,
       status: 201,
-      data: { reply: "ok" },
+      reply: "ok",
+      data: { raw, reply: "ok" },
     });
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://openclaw.example.test/run",
+      "https://api.openai.com/v1/chat/completions",
       expect.objectContaining({
         method: "POST",
         cache: "no-store",
@@ -91,18 +99,14 @@ describe("POST /api/ai/openclaw", () => {
           "Content-Type": "application/json",
           Authorization: "Bearer secret-token",
         },
-        body: JSON.stringify({
-          prompt: "总结当前柜子",
-          shipmentId: "SHP-240610-001",
-          context: { carrier: "OOCL" },
-          source: "freightflow-ai",
-        }),
+        body: expect.stringContaining("gpt-4.1-mini"),
       }),
     );
   });
 
   it("returns a 502 response when the configured OpenClaw request fails", async () => {
-    process.env.OPENCLAW_API_URL = "https://openclaw.example.test/run";
+    process.env.AI_PROVIDER = "openai";
+    process.env.AI_API_KEY = "secret-token";
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network unavailable")));
 
     const { response, json } = await postJson({ prompt: "检查异常" });
@@ -116,16 +120,18 @@ describe("POST /api/ai/openclaw", () => {
   });
 
   it("uses saved settings before environment variables", async () => {
-    process.env.OPENCLAW_API_URL = "https://env-openclaw.example.test/run";
+    process.env.AI_PROVIDER = "openai";
+    process.env.AI_API_KEY = "env-token";
     await saveOpenClawConfig({
       apiKey: "saved-token",
       enabled: true,
-      endpoint: "https://saved-openclaw.example.test/run",
-      model: "saved-model",
+      model: "deepseek-chat",
+      provider: "deepseek",
       timeoutMs: 9000,
     });
+    const raw = { choices: [{ message: { content: "saved ok" } }] };
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ reply: "saved ok" }), {
+      new Response(JSON.stringify(raw), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       }),
@@ -135,20 +141,15 @@ describe("POST /api/ai/openclaw", () => {
     const { response, json } = await postJson({ prompt: "检查保存配置" });
 
     expect(response.status).toBe(200);
-    expect(json).toMatchObject({ mode: "proxy", forwarded: true, status: 200 });
+    expect(json).toMatchObject({ mode: "proxy", forwarded: true, provider: "deepseek", reply: "saved ok", status: 200 });
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://saved-openclaw.example.test/run",
+      "https://api.deepseek.com/v1/chat/completions",
       expect.objectContaining({
         headers: {
           "Content-Type": "application/json",
           Authorization: "Bearer saved-token",
         },
-        body: JSON.stringify({
-          prompt: "检查保存配置",
-          context: {},
-          model: "saved-model",
-          source: "freightflow-ai",
-        }),
+        body: expect.stringContaining("deepseek-chat"),
       }),
     );
   });

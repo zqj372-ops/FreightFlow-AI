@@ -4,6 +4,7 @@ import type { ChangeEvent } from "react";
 import { SectionCard } from "@/features/freightflow/shared-ui";
 
 export type SoUploadDraft = {
+  fileBase64?: string;
   fileName: string;
   mimeType: string;
   sourceText: string;
@@ -30,19 +31,32 @@ export function SoUploadPanel({
   statusText: string;
   syncing: boolean;
 }) {
+  function readFileAsDataUrl(file: File) {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.addEventListener("load", () => resolve(String(reader.result ?? "")));
+      reader.addEventListener("error", () => reject(reader.error ?? new Error("Failed to read file.")));
+      reader.readAsDataURL(file);
+    });
+  }
+
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
 
     const canReadAsText = file.type.startsWith("text/") || /\.(csv|eml|txt)$/i.test(file.name);
+    const sourceText = canReadAsText ? await file.text() : "";
+    const fileBase64 = canReadAsText ? undefined : await readFileAsDataUrl(file);
+
     onChange({
+      fileBase64,
       fileName: file.name,
       mimeType: file.type || "application/octet-stream",
-      sourceText: canReadAsText ? await file.text() : draft.sourceText,
+      sourceText,
     });
   }
 
-  const canRun = draft.sourceText.trim().length > 0 && !disabled;
+  const canRun = (draft.sourceText.trim().length > 0 || Boolean(draft.fileBase64)) && !disabled;
 
   return (
     <SectionCard title="SO 上传识别" kicker={selectedBatchNo}>
@@ -101,7 +115,10 @@ export function SoUploadPanel({
             className="min-h-56 w-full resize-y rounded-xl border border-slate-200 px-3 py-2.5 font-mono text-sm leading-6 text-slate-900 outline-none focus:border-cyan-500"
             placeholder="SO / Booking No: OOLU8791320&#10;Carrier: OOCL&#10;Vessel: OOCL Rauma&#10;Voyage: 068E"
           />
-          <p className="mt-2 min-h-5 text-xs leading-5 text-slate-500">{statusText}</p>
+          <p className="mt-2 min-h-5 text-xs leading-5 text-slate-500">
+            {statusText}
+            {draft.fileBase64 && !draft.sourceText.trim() ? " PDF/图片会发送到 OCR provider。" : ""}
+          </p>
         </label>
       </div>
     </SectionCard>

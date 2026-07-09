@@ -1,6 +1,14 @@
 import type { ShipmentRecord } from "@/lib/mock-data";
-import type { SoApplyResult, SoExtractionResult, SoOcrResult } from "@/lib/so/so-types";
+import type {
+  SoApplyResult,
+  SoDocumentCenterRecord,
+  SoDocumentStatusBucket,
+  SoExtractionResult,
+  SoFieldReviewPatch,
+  SoOcrResult,
+} from "@/lib/so/so-types";
 import type { ContactRecord, DetailActionLabel } from "@/lib/freightflow-domain";
+import type { AiProviderId } from "@/lib/ai-providers";
 
 import type { BookingDraft } from "./page-helpers";
 
@@ -22,6 +30,8 @@ export type PublicOpenClawConfig = {
   endpoint: string;
   enabled: boolean;
   model: string;
+  models: string[];
+  provider: AiProviderId;
   timeoutMs: number;
   updatedAt: string | null;
 };
@@ -31,6 +41,8 @@ export type OpenClawSettingsPayload = {
   endpoint: string;
   enabled: boolean;
   model: string;
+  models?: string[];
+  provider: AiProviderId;
   test?: boolean;
   timeoutMs: number;
 };
@@ -101,6 +113,8 @@ export type BookingDraftApiResult = {
 };
 
 export type SoDocumentRecord = {
+  confidence?: number | null;
+  createdAt?: string;
   fileName: string;
   id: string;
   mimeType: string;
@@ -108,6 +122,8 @@ export type SoDocumentRecord = {
   rawText?: string | null;
   shipmentId: string;
   source: string;
+  status?: string;
+  updatedAt?: string;
 };
 
 export type SoValidationResult = {
@@ -272,6 +288,7 @@ export async function sendConfirmedBookingEmail({
       body: draft.body,
       cc: draft.cc,
       confirmed: true,
+      draftId: draft.draftId,
       shipmentId,
       subject: draft.subject,
       to: draft.to,
@@ -324,12 +341,30 @@ export async function uploadSoDocument({
   return payload.data;
 }
 
+export async function loadSoDocuments(bucket?: SoDocumentStatusBucket): Promise<ApiLoadResult<SoDocumentCenterRecord[]>> {
+  const query = bucket ? `?bucket=${encodeURIComponent(bucket)}` : "";
+  const response = await fetch(`/api/so/upload${query}`, { cache: "no-store" });
+  const payload = await readJson<SoDocumentCenterRecord[]>(response);
+
+  if (!response.ok || !payload.data) {
+    throw new Error(payload.error ?? "Failed to load SO documents.");
+  }
+
+  return {
+    data: payload.data,
+    source: payload.source ?? "database",
+    warning: payload.warning,
+  };
+}
+
 export async function runSoOcr({
+  fileBase64,
   fileName,
   mimeType,
   soDocumentId,
   sourceText,
 }: {
+  fileBase64?: string;
   fileName: string;
   mimeType: string;
   soDocumentId?: string;
@@ -338,7 +373,7 @@ export async function runSoOcr({
   const response = await fetch("/api/so/ocr", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ fileName, mimeType, soDocumentId, sourceText }),
+    body: JSON.stringify({ fileBase64, fileName, mimeType, soDocumentId, sourceText }),
   });
   const payload = await readJson<SoOcrResult>(response);
 
@@ -371,16 +406,22 @@ export async function extractSoDocument({
 }
 
 export async function applySoExtractionToShipment({
+  confirmedFieldKeys,
   extraction,
+  fieldOverrides,
   shipmentId,
+  soDocumentId,
 }: {
+  confirmedFieldKeys?: string[];
   extraction: SoExtractionResult;
+  fieldOverrides?: SoFieldReviewPatch[];
   shipmentId: string;
+  soDocumentId?: string | null;
 }) {
   const response = await fetch("/api/so/apply-to-shipment", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ extraction, shipmentId }),
+    body: JSON.stringify({ confirmedFieldKeys, extraction, fieldOverrides, shipmentId, soDocumentId, source: "UI" }),
   });
   const payload = await readJson<SoApplyResult & { persisted?: boolean }>(response);
 

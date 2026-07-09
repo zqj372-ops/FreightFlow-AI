@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { readEmailConfig } from "@/lib/email-config";
-import { findSoAttachments } from "@/lib/email/attachment-detector";
 import { parseEmailMessages, type RawEmailMessage } from "@/lib/email/email-parser";
-import { matchEmailToShipment } from "@/lib/email/email-thread-matcher";
+import {
+  getEmailMailboxName,
+  loadShipmentThreadSignals,
+  persistEmailSyncItems,
+  prepareEmailSyncItems,
+} from "@/lib/email/email-sync-service";
 import { fetchRecentEmailMessages } from "@/lib/email/imap-client";
 import { isPrismaUnavailable, listShipmentsFromDatabase, mockShipments } from "@/lib/freightflow-data";
-import { prisma } from "@/lib/prisma";
 
 type SyncBody = {
   messages?: RawEmailMessage[];
@@ -27,68 +30,68 @@ export async function POST(request: NextRequest) {
   const startedAt = new Date();
   const config = await readEmailConfig();
   const shipments = await loadShipments();
+  const mailbox = getEmailMailboxName(config);
   const rawMessages = Array.isArray(body.messages)
     ? body.messages
     : await fetchRecentEmailMessages(config, 20);
   const messages = parseEmailMessages(rawMessages);
-  const matches = messages.flatMap((message) => {
-    const matched = matchEmailToShipment(message, shipments);
-    if (!matched) return [];
-
-    const soAttachments = findSoAttachments(message.attachments);
-
-    return [{
-      attachments: soAttachments,
-      message,
-      score: matched.score,
-      shipment: matched.shipment,
-    }];
-  });
-  const attachmentCount = matches.reduce((total, item) => total + item.attachments.length, 0);
-  let syncLogId: string | null = null;
-  const createdDocuments: Array<{ fileName: string; shipmentId: string; soDocumentId: string | null }> = [];
+  let threadSignals: Awaited<ReturnType<typeof loadShipmentThreadSignals>> = [];
+  let warning: string | undefined =
+    config.enabled || body.messages ? undefined : "IMAP is not configured; pass sample messages or enable email settings.";
 
   try {
-    const syncLog = await prisma.emailSyncLog.create({
-      data: {
-        mailbox: config.username || config.imapHost || "local-sample",
-        status: "SUCCESS",
-        matchedCount: matches.length,
-        attachmentCount,
-        startedAt,
-        completedAt: new Date(),
-      },
-      select: { id: true },
-    });
-    syncLogId = syncLog.id;
+    threadSignals = await loadShipmentThreadSignals();
+  } catch (error) {
+    if (!isPrismaUnavailable(error)) console.warn("Email thread signal loading skipped", error);
+  }
 
-    for (const match of matches) {
-      for (const attachment of match.attachments) {
-        const document = await prisma.soDocument.create({
-          data: {
-            shipmentId: match.shipment.id,
-            fileName: attachment.fileName,
-            mimeType: attachment.contentType ?? "application/octet-stream",
-            storagePath: `email://${syncLog.id}/${attachment.fileName}`,
-            source: "EMAIL_ATTACHMENT",
-            ocrStatus: "PENDING",
-          },
-          select: { id: true },
-        });
-        createdDocuments.push({
-          fileName: attachment.fileName,
-          shipmentId: match.shipment.id,
-          soDocumentId: document.id,
-        });
-      }
-    }
+  const syncItems = prepareEmailSyncItems({ messages, shipments, threadSignals });
+  const matches = syncItems.flatMap((item) => {
+    if (!item.match) return [];
+
+    return [{
+      attachments: item.soAttachments,
+      message: item.message,
+      messageId: item.dedupeMessageId,
+      score: item.match.score,
+      shipment: item.match.shipment,
+    }];
+  });
+  let syncLogId: string | null = null;
+  const createdDocuments: Array<{ fileName: string; shipmentId: string; soDocumentId: string | null }> = [];
+  let storedMessageCount = 0;
+  let skippedDuplicateCount = 0;
+
+  try {
+    const persistence = await persistEmailSyncItems({
+      items: syncItems,
+      mailbox,
+      startedAt,
+    });
+    syncLogId = persistence.syncLogId;
+    storedMessageCount = persistence.storedMessageCount;
+    skippedDuplicateCount = persistence.duplicateMessages.length;
+    createdDocuments.push(
+      ...persistence.createdDocuments.map((document) => ({
+        fileName: document.fileName,
+        shipmentId: document.shipmentId,
+        soDocumentId: document.soDocumentId,
+      })),
+    );
   } catch (error) {
     if (!isPrismaUnavailable(error)) console.warn("Email sync persistence skipped", error);
-    for (const match of matches) {
-      for (const attachment of match.attachments) {
+    warning =
+      error instanceof Error
+        ? `Email messages were parsed, but sync persistence was skipped: ${error.message}`
+        : "Email messages were parsed, but sync persistence was skipped.";
+
+    for (const item of syncItems) {
+      if (!item.match) continue;
+
+      for (const attachment of item.soAttachments) {
         createdDocuments.push({
           fileName: attachment.fileName,
-          shipmentId: match.shipment.id,
+          shipmentId: item.match.shipment.id,
           soDocumentId: null,
         });
       }
@@ -102,8 +105,10 @@ export async function POST(request: NextRequest) {
       matchedCount: matches.length,
       matches,
       messageCount: messages.length,
+      skippedDuplicateCount,
+      storedMessageCount,
       syncLogId,
-      warning: config.enabled || body.messages ? undefined : "IMAP is not configured; pass sample messages or enable email settings.",
+      warning,
     },
   });
 }

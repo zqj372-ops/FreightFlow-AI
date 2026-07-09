@@ -1,6 +1,7 @@
 import {
   ActionSource as DbActionSource,
   AlertLevel as DbAlertLevel,
+  BookingStatus as DbBookingStatus,
   ContactRole as DbContactRole,
   DocumentProgressStatus as DbDocumentProgressStatus,
   MailStatus as DbMailStatus,
@@ -25,6 +26,7 @@ import {
   getAlertLevel,
   shipments as mockShipments,
   type AlertLevel,
+  type BookingStatus,
   type ShipmentRecord,
   type ShipmentStatus,
 } from "./mock-data";
@@ -66,6 +68,19 @@ const shipmentStatusToDb = {
 } satisfies Record<ShipmentStatus, DbShipmentStatus>;
 
 const dbShipmentStatusToUi = invertRecord(shipmentStatusToDb);
+
+const bookingStatusToDb = {
+  订舱草稿: DbBookingStatus.BOOKING_DRAFT,
+  已发送订舱: DbBookingStatus.BOOKING_SENT,
+  "等待 SO": DbBookingStatus.WAITING_SO,
+  "SO 已收到": DbBookingStatus.SO_RECEIVED,
+  "SO 复核中": DbBookingStatus.SO_REVIEWING,
+  已放舱: DbBookingStatus.RELEASED,
+  待补料: DbBookingStatus.PENDING_DOCUMENTS,
+  失败: DbBookingStatus.FAILED,
+} satisfies Record<BookingStatus, DbBookingStatus>;
+
+const dbBookingStatusToUi = invertRecord(bookingStatusToDb);
 
 const alertLevelToDb = {
   red: DbAlertLevel.RED,
@@ -125,10 +140,70 @@ const actionTypeToDb = {
   异常标记: DbShipmentActionType.EXCEPTION_MARK,
 } satisfies Record<DetailActionLabel, DbShipmentActionType>;
 
+function shipmentActionTypeForLog(input: ShipmentActionRequest & { action: DetailActionLabel }) {
+  if (input.action === "SO 识别" && input.soStage === "received") return DbShipmentActionType.SO_RECEIVED;
+  if (input.action === "SO 识别" && input.soStage === "applied") return DbShipmentActionType.SO_APPLIED;
+
+  return actionTypeToDb[input.action];
+}
+
 const actionSources = new Set<string>(Object.values(DbActionSource));
+const mailStatuses = new Set<ShipmentRecord["mailStatus"]>(["未发送", "已发送", "跟进中"]);
+const soStatuses = new Set<ShipmentRecord["soStatus"]>(["待识别", "已识别"]);
+const shipmentDocumentStatuses = new Set<ShipmentRecord["documentStatus"]>(["待生成", "处理中", "已发送", "已确认"]);
+const documentProgressStatuses = new Set<ShipmentRecord["documentProgress"]["ams"]>(["待处理", "草稿完成", "已发送"]);
 
 function invertRecord<T extends string, U extends string>(record: Record<T, U>) {
   return Object.fromEntries(Object.entries(record).map(([key, value]) => [value, key])) as Record<U, T>;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function jsonSnapshot(value: unknown): Prisma.InputJsonValue {
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
+
+function normalizeActionSource(value: unknown) {
+  return typeof value === "string" && actionSources.has(value) ? (value as DbActionSource) : DbActionSource.UI;
+}
+
+function stringValue(value: unknown, fallback?: string) {
+  return typeof value === "string" ? value.trim() : fallback ?? "";
+}
+
+function numberValue(value: unknown, fallback?: number) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback ?? 0;
+}
+
+function stringArrayValue(value: unknown, fallback: string[]) {
+  return Array.isArray(value) ? value.map((item) => stringValue(item)).filter(Boolean) : fallback;
+}
+
+function documentProgressValue(value: unknown, fallback: ShipmentRecord["documentProgress"]) {
+  const input = isRecord(value) ? value : {};
+  const readStatus = (key: keyof ShipmentRecord["documentProgress"]) => {
+    const candidate = stringValue(input[key], fallback[key]);
+    return documentProgressStatuses.has(candidate as ShipmentRecord["documentProgress"]["ams"])
+      ? (candidate as ShipmentRecord["documentProgress"]["ams"])
+      : fallback[key];
+  };
+
+  return {
+    ams: readStatus("ams"),
+    aci: readStatus("aci"),
+    isf: readStatus("isf"),
+  };
+}
+
+function inferBookingStatus(record: Pick<ShipmentRecord, "mailStatus" | "soStatus" | "status">): BookingStatus {
+  if (record.status === "异常处理中") return record.soStatus === "已识别" ? "SO 复核中" : "失败";
+  if (record.status === "已放舱") return "已放舱";
+  if (["待补料", "已发送补料", "等待补料确认", "补料已确认"].includes(record.status)) return "待补料";
+  if (record.mailStatus === "未发送") return "订舱草稿";
+  return "等待 SO";
 }
 
 export function isPrismaUnavailable(error: unknown) {
@@ -189,6 +264,7 @@ export function toShipmentRecord(shipment: ShipmentWithRelations): ShipmentRecor
     pickupLocation: shipment.pickupLocation,
     returnLocation: shipment.returnLocation,
     status: dbShipmentStatusToUi[shipment.status],
+    bookingStatus: dbBookingStatusToUi[shipment.bookingStatus],
     operator: shipment.operator,
     followUpCount: shipment.followUpCount,
     lastEmailTime: formatDateForUi(shipment.lastEmailTime),
@@ -244,6 +320,7 @@ export function shipmentCreateData(record: ShipmentRecord) {
     pickupLocation: record.pickupLocation,
     returnLocation: record.returnLocation,
     status: shipmentStatusToDb[record.status],
+    bookingStatus: bookingStatusToDb[record.bookingStatus],
     operator: record.operator,
     followUpCount: record.followUpCount,
     lastEmailTime: record.lastEmailTime ? parseUiDate(record.lastEmailTime) : null,
@@ -289,6 +366,7 @@ export function shipmentUpdateData(record: ShipmentRecord) {
     pickupLocation: record.pickupLocation,
     returnLocation: record.returnLocation,
     status: shipmentStatusToDb[record.status],
+    bookingStatus: bookingStatusToDb[record.bookingStatus],
     operator: record.operator,
     followUpCount: record.followUpCount,
     lastEmailTime: record.lastEmailTime ? parseUiDate(record.lastEmailTime) : null,
@@ -422,7 +500,171 @@ export function normalizeShipmentAction(input: unknown) {
     return { error: "source must be UI, AI, or SYSTEM." } as const;
   }
 
+  if (body.soStage && !["received", "reviewing", "applied"].includes(body.soStage)) {
+    return { error: "soStage must be received, reviewing, or applied." } as const;
+  }
+
   return { value: { ...body, action } } as const;
+}
+
+type ShipmentMutationMetadata = {
+  actorEmail?: string | null;
+  actorName?: string | null;
+  source?: DbActionSource;
+  summary?: string;
+};
+
+function normalizeShipmentMutation(input: unknown, fallback?: ShipmentRecord) {
+  if (!isRecord(input)) {
+    return { error: "Request body must be an object." } as const;
+  }
+
+  const body = isRecord(input.shipment) ? input.shipment : input;
+  const fallbackProgress = fallback?.documentProgress ?? { aci: "待处理" as const, ams: "待处理" as const, isf: "待处理" as const };
+  const status = stringValue(body.status, fallback?.status ?? "已发送订舱") as ShipmentStatus;
+  const mailStatus = stringValue(body.mailStatus, fallback?.mailStatus ?? "未发送") as ShipmentRecord["mailStatus"];
+  const soStatus = stringValue(body.soStatus, fallback?.soStatus ?? "待识别") as ShipmentRecord["soStatus"];
+  const documentStatus = stringValue(body.documentStatus, fallback?.documentStatus ?? "待生成") as ShipmentRecord["documentStatus"];
+
+  if (!(status in shipmentStatusToDb)) {
+    return { error: "status is invalid." } as const;
+  }
+
+  if (!mailStatuses.has(mailStatus)) {
+    return { error: "mailStatus is invalid." } as const;
+  }
+
+  if (!soStatuses.has(soStatus)) {
+    return { error: "soStatus is invalid." } as const;
+  }
+
+  if (!shipmentDocumentStatuses.has(documentStatus)) {
+    return { error: "documentStatus is invalid." } as const;
+  }
+
+  const inferredBookingStatus = inferBookingStatus({ mailStatus, soStatus, status });
+  const bookingStatus = stringValue(body.bookingStatus, fallback?.bookingStatus ?? inferredBookingStatus) as BookingStatus;
+
+  if (!(bookingStatus in bookingStatusToDb)) {
+    return { error: "bookingStatus is invalid." } as const;
+  }
+
+  const record = {
+    id: stringValue(body.id, fallback?.id),
+    batchNo: stringValue(body.batchNo, fallback?.batchNo),
+    soNo: stringValue(body.soNo, fallback?.soNo),
+    containerNo: stringValue(body.containerNo, fallback?.containerNo),
+    bookingAgent: stringValue(body.bookingAgent, fallback?.bookingAgent),
+    carrier: stringValue(body.carrier, fallback?.carrier),
+    originPort: stringValue(body.originPort, fallback?.originPort),
+    transitPort: stringValue(body.transitPort, fallback?.transitPort),
+    destinationPort: stringValue(body.destinationPort, fallback?.destinationPort),
+    containerType: stringValue(body.containerType, fallback?.containerType),
+    vesselVoyage: stringValue(body.vesselVoyage, fallback?.vesselVoyage),
+    etd: stringValue(body.etd, fallback?.etd),
+    eta: stringValue(body.eta, fallback?.eta),
+    cutoffTime: stringValue(body.cutoffTime, fallback?.cutoffTime),
+    pickupLocation: stringValue(body.pickupLocation, fallback?.pickupLocation),
+    returnLocation: stringValue(body.returnLocation, fallback?.returnLocation),
+    status,
+    bookingStatus,
+    operator: stringValue(body.operator, fallback?.operator),
+    followUpCount: numberValue(body.followUpCount, fallback?.followUpCount),
+    lastEmailTime: stringValue(body.lastEmailTime, fallback?.lastEmailTime),
+    hoursWaitingRelease: numberValue(body.hoursWaitingRelease, fallback?.hoursWaitingRelease),
+    hoursToCutoff: numberValue(body.hoursToCutoff, fallback?.hoursToCutoff),
+    aiSummary: stringValue(body.aiSummary, fallback?.aiSummary),
+    exceptions: stringArrayValue(body.exceptions, fallback?.exceptions ?? []),
+    nextAction: stringValue(body.nextAction, fallback?.nextAction),
+    reminderFlags: stringArrayValue(body.reminderFlags, fallback?.reminderFlags ?? []),
+    documentProgress: documentProgressValue(body.documentProgress, fallbackProgress),
+    mailStatus,
+    soStatus,
+    documentStatus,
+  } satisfies ShipmentRecord;
+
+  const missingRequiredField = ["id", "batchNo", "etd", "eta", "cutoffTime"].find((field) => !record[field as keyof ShipmentRecord]);
+
+  if (missingRequiredField) {
+    return { error: `${missingRequiredField} is required.` } as const;
+  }
+
+  return {
+    value: {
+      metadata: {
+        actorEmail: stringValue(input.actorEmail) || null,
+        actorName: stringValue(input.actorName) || null,
+        source: normalizeActionSource(input.source),
+        summary: stringValue(input.summary),
+      } satisfies ShipmentMutationMetadata,
+      record,
+    },
+  } as const;
+}
+
+export async function createShipmentInDatabase(input: unknown) {
+  const parsed = normalizeShipmentMutation(input);
+
+  if ("error" in parsed) return parsed;
+
+  const { metadata, record } = parsed.value;
+
+  return prisma.$transaction(async (tx) => {
+    const created = await tx.shipment.create({
+      data: shipmentCreateData(record),
+      include: shipmentInclude,
+    });
+    const shipment = toShipmentRecord(created);
+    const actionLog = await tx.shipmentActionLog.create({
+      data: {
+        shipmentId: shipment.id,
+        actionType: DbShipmentActionType.SHIPMENT_CREATED,
+        source: metadata.source,
+        actorName: metadata.actorName,
+        actorEmail: metadata.actorEmail,
+        summary: metadata.summary || "Shipment created.",
+        beforeSnapshot: Prisma.JsonNull,
+        afterSnapshot: jsonSnapshot(shipment),
+      },
+    });
+
+    return { actionLog, shipment };
+  });
+}
+
+export async function updateShipmentInDatabase(id: string, input: unknown) {
+  return prisma.$transaction(async (tx) => {
+    const before = await tx.shipment.findUnique({ where: { id }, include: shipmentInclude });
+
+    if (!before) return { notFound: true } as const;
+
+    const beforeRecord = toShipmentRecord(before);
+    const parsed = normalizeShipmentMutation(input, beforeRecord);
+
+    if ("error" in parsed) return parsed;
+
+    const { metadata, record } = parsed.value;
+    const after = await tx.shipment.update({
+      where: { id },
+      data: shipmentUpdateData({ ...record, id }),
+      include: shipmentInclude,
+    });
+    const afterRecord = toShipmentRecord(after);
+    const actionLog = await tx.shipmentActionLog.create({
+      data: {
+        shipmentId: id,
+        actionType: DbShipmentActionType.SHIPMENT_UPDATED,
+        source: metadata.source,
+        actorName: metadata.actorName,
+        actorEmail: metadata.actorEmail,
+        summary: metadata.summary || "Shipment updated.",
+        beforeSnapshot: jsonSnapshot(beforeRecord),
+        afterSnapshot: jsonSnapshot(afterRecord),
+      },
+    });
+
+    return { actionLog, shipment: afterRecord };
+  });
 }
 
 export async function persistShipmentAction(id: string, input: ShipmentActionRequest & { action: DetailActionLabel }) {
@@ -443,13 +685,13 @@ export async function persistShipmentAction(id: string, input: ShipmentActionReq
     const actionLog = await tx.shipmentActionLog.create({
       data: {
         shipmentId: id,
-        actionType: actionTypeToDb[input.action],
+        actionType: shipmentActionTypeForLog(input),
         source: input.source ? (input.source as DbActionSource) : DbActionSource.UI,
         actorName: input.actorName?.trim() || null,
         actorEmail: input.actorEmail?.trim() || null,
         summary,
-        beforeSnapshot: beforeRecord as unknown as Prisma.InputJsonValue,
-        afterSnapshot: afterRecord as unknown as Prisma.InputJsonValue,
+        beforeSnapshot: jsonSnapshot(beforeRecord),
+        afterSnapshot: jsonSnapshot(afterRecord),
       },
     });
 
@@ -477,4 +719,4 @@ export async function persistShipmentAction(id: string, input: ShipmentActionReq
   });
 }
 
-export { alertLevelToDb, contactRoleToDb, dbAlertLevelToUi, mockShipments, shipmentStatusToDb };
+export { alertLevelToDb, bookingStatusToDb, contactRoleToDb, dbAlertLevelToUi, mockShipments, shipmentStatusToDb };

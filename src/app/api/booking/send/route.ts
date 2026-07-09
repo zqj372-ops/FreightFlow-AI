@@ -3,15 +3,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { buildBookingEmailContext } from "@/lib/booking/booking-email-builder";
 import { validateBookingDraft } from "@/lib/booking/booking-validator";
 import { readEmailConfig } from "@/lib/email-config";
-import { getMockShipment, getShipmentFromDatabase, isPrismaUnavailable, persistShipmentAction } from "@/lib/freightflow-data";
+import { getMockShipment, getShipmentFromDatabase, isPrismaUnavailable } from "@/lib/freightflow-data";
 import type { ShipmentRecord } from "@/lib/mock-data";
-import { parseShipmentEmailInput, sendShipmentEmail } from "@/lib/services/email/email-service";
+import {
+  markBookingDraftFailed,
+  parseShipmentEmailInput,
+  persistBookingEmailSend,
+  sendShipmentEmail,
+} from "@/lib/services/email/email-service";
 
 type SendBody = {
   attachmentName?: string;
   body?: string;
   cc?: string[];
   confirmed?: boolean;
+  draftId?: string;
   shipment?: ShipmentRecord;
   shipmentId?: string;
   subject?: string;
@@ -62,34 +68,42 @@ export async function POST(request: NextRequest) {
     }
 
     const input = parseShipmentEmailInput(shipment.id, draft);
-    const result = await sendShipmentEmail(input);
-    let actionResult = null;
-    let actionWarning: string | undefined;
+    const result = await sendShipmentEmail(input, { persistEmailLog: false });
+    let persistenceResult = null;
+    let persistenceWarning: string | undefined;
 
     try {
-      actionResult = await persistShipmentAction(shipment.id, {
-        action: "订舱邮件",
-        body: draft.body,
-        cc: draft.cc,
-        skipEmailLog: true,
-        source: "SYSTEM",
-        subject: draft.subject,
-        to: draft.to,
+      persistenceResult = await persistBookingEmailSend(input, result.providerMessage.sentAt, {
+        draftId: body.draftId ?? null,
       });
     } catch (error) {
-      if (!isPrismaUnavailable(error)) throw error;
-      actionWarning = "Email was sent but ShipmentActionLog was not persisted because the database is unavailable.";
+      persistenceWarning =
+        error instanceof Error
+          ? `Email was sent, but booking send outcome was not fully persisted: ${error.message}`
+          : "Email was sent, but booking send outcome was not fully persisted.";
     }
 
     return NextResponse.json({
       data: {
-        action: actionResult,
-        actionWarning: actionWarning ?? result.persistenceWarning,
+        action: persistenceResult?.actionLog ?? null,
+        draft: persistenceResult?.draft ?? null,
+        emailLog: persistenceResult?.emailLog ?? null,
+        persistence: persistenceResult,
+        actionWarning: persistenceWarning ?? result.persistenceWarning,
         email: result,
+        shipment: persistenceResult?.shipment ?? null,
         validation,
       },
     });
   } catch (error) {
+    if (body.confirmed === true && body.shipmentId && (body.draftId || body.subject)) {
+      await markBookingDraftFailed({
+        draftId: body.draftId ?? null,
+        shipmentId: body.shipmentId,
+        subject: body.subject,
+      }).catch(() => undefined);
+    }
+
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to send booking email." },
       { status: 500 },

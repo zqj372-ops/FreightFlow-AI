@@ -6,8 +6,12 @@ import type { EmailConfig } from "@/lib/email-config";
 import type { EmailAttachment } from "./attachment-detector";
 import type { RawEmailMessage } from "./email-parser";
 
+function addressList(addresses: Array<{ address?: string | false | null }> | undefined) {
+  return addresses?.map((item) => item.address).filter((address): address is string => Boolean(address)) ?? [];
+}
+
 function firstAddress(addresses: Array<{ address?: string | false | null }> | undefined) {
-  return addresses?.map((item) => item.address).filter(Boolean).join(", ") ?? "";
+  return addressList(addresses).join(", ");
 }
 
 function filenameFromNode(node: MessageStructureObject) {
@@ -69,6 +73,20 @@ export function extractPlainTextFromSource(source: Buffer | undefined) {
     .slice(0, 12000);
 }
 
+function unfoldHeaders(source: Buffer | undefined) {
+  if (!source) return "";
+
+  const raw = source.toString("utf8");
+  return raw.split(/\r?\n\r?\n/)[0]?.replace(/\r?\n[ \t]+/g, " ") ?? "";
+}
+
+function getHeaderValue(source: Buffer | undefined, headerName: string) {
+  const headers = unfoldHeaders(source);
+  const match = new RegExp(`^${headerName}:\\s*(.+)$`, "im").exec(headers);
+
+  return match?.[1]?.trim() ?? "";
+}
+
 export async function fetchRecentEmailMessages(config: EmailConfig, limit = 20): Promise<RawEmailMessage[]> {
   if (!config.enabled || !config.imapHost || !config.username || !config.password) {
     return [];
@@ -98,13 +116,19 @@ export async function fetchRecentEmailMessages(config: EmailConfig, limit = 20):
     })) {
       const subject = message.envelope?.subject ?? "";
       const from = firstAddress(message.envelope?.from);
+      const references = getHeaderValue(message.source, "References");
 
       messages.push({
         attachments: extractEmailAttachmentsFromStructure(message.bodyStructure),
         body: extractPlainTextFromSource(message.source),
+        cc: addressList(message.envelope?.cc),
         from,
+        inReplyTo: message.envelope?.inReplyTo || getHeaderValue(message.source, "In-Reply-To") || undefined,
+        messageId: message.envelope?.messageId || getHeaderValue(message.source, "Message-ID") || undefined,
         receivedAt: message.envelope?.date?.toISOString() ?? new Date().toISOString(),
+        references: references ? references.split(/\s+/).filter(Boolean) : [],
         subject,
+        to: addressList(message.envelope?.to),
       });
     }
 

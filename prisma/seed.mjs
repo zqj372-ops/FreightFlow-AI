@@ -1,5 +1,6 @@
 import {
   AlertLevel,
+  BookingStatus,
   ContactRole as DbContactRole,
   DocumentProgressStatus,
   MailStatus,
@@ -40,6 +41,17 @@ const shipmentStatusToDb = {
   已签收: DbShipmentStatus.SIGNED,
   已完成: DbShipmentStatus.COMPLETED,
   异常处理中: DbShipmentStatus.EXCEPTION_PROCESSING,
+};
+
+const bookingStatusToDb = {
+  订舱草稿: BookingStatus.BOOKING_DRAFT,
+  已发送订舱: BookingStatus.BOOKING_SENT,
+  "等待 SO": BookingStatus.WAITING_SO,
+  "SO 已收到": BookingStatus.SO_RECEIVED,
+  "SO 复核中": BookingStatus.SO_REVIEWING,
+  已放舱: BookingStatus.RELEASED,
+  待补料: BookingStatus.PENDING_DOCUMENTS,
+  失败: BookingStatus.FAILED,
 };
 
 const documentProgressToDb = {
@@ -137,6 +149,7 @@ function shipmentCreateData(record) {
     pickupLocation: record.pickupLocation,
     returnLocation: record.returnLocation,
     status: shipmentStatusToDb[record.status],
+    bookingStatus: bookingStatusToDb[record.bookingStatus],
     operator: record.operator,
     followUpCount: record.followUpCount,
     lastEmailTime: record.lastEmailTime ? parseUiDate(record.lastEmailTime) : null,
@@ -182,6 +195,7 @@ function shipmentUpdateData(record) {
     pickupLocation: record.pickupLocation,
     returnLocation: record.returnLocation,
     status: shipmentStatusToDb[record.status],
+    bookingStatus: bookingStatusToDb[record.bookingStatus],
     operator: record.operator,
     followUpCount: record.followUpCount,
     lastEmailTime: record.lastEmailTime ? parseUiDate(record.lastEmailTime) : null,

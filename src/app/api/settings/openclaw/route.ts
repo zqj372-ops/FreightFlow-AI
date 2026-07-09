@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { fetchAiModels, requestAiModel } from "@/lib/ai-model-client";
 import {
   readOpenClawConfig,
   saveOpenClawConfig,
@@ -7,17 +8,17 @@ import {
   type OpenClawConfig,
 } from "@/lib/openclaw-config";
 
-type SavePayload = Partial<Pick<OpenClawConfig, "apiKey" | "enabled" | "endpoint" | "model" | "timeoutMs">>;
+type SavePayload = Partial<Pick<OpenClawConfig, "apiKey" | "enabled" | "endpoint" | "model" | "models" | "provider" | "timeoutMs">>;
 
 function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "OpenClaw settings request failed";
+  return error instanceof Error ? error.message : "AI settings request failed";
 }
 
-async function testOpenClawConnection(config: OpenClawConfig) {
-  if (!config.enabled || !config.endpoint) {
+async function testAiConnection(config: OpenClawConfig) {
+  if (!config.enabled) {
     return {
       ok: false,
-      message: "OpenClaw 尚未启用或服务地址为空。",
+      message: "AI 大模型尚未启用。",
     };
   }
 
@@ -26,27 +27,17 @@ async function testOpenClawConnection(config: OpenClawConfig) {
   const timer = setTimeout(() => controller.abort(), config.timeoutMs);
 
   try {
-    const response = await fetch(config.endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
-      },
-      body: JSON.stringify({
-        prompt: "FreightFlow AI OpenClaw connection test. Reply with ok.",
-        context: { source: "freightflow-ai-settings" },
-        model: config.model || undefined,
-        source: "freightflow-ai",
-      }),
-      cache: "no-store",
+    const result = await requestAiModel(config, {
+      context: { source: "freightflow-ai-settings" },
+      prompt: "FreightFlow AI connection test. Reply with ok.",
       signal: controller.signal,
     });
 
     return {
-      ok: response.ok,
-      status: response.status,
+      ok: result.ok,
+      status: result.status,
       responseTimeMs: Date.now() - startedAt,
-      message: response.ok ? "OpenClaw 连接测试成功。" : `OpenClaw 返回 HTTP ${response.status}。`,
+      message: result.ok ? "AI 大模型连接测试成功。" : `AI 大模型返回 HTTP ${result.status}。`,
     };
   } catch (error) {
     return {
@@ -75,8 +66,11 @@ export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => ({}))) as SavePayload & { test?: boolean };
 
   try {
-    const config = await saveOpenClawConfig(body);
-    const test = body.test ? await testOpenClawConnection(config) : null;
+    let config = await saveOpenClawConfig(body);
+    const models = await fetchAiModels(config);
+    const model = config.model || models[0] || "";
+    config = await saveOpenClawConfig({ models, model });
+    const test = body.test ? await testAiConnection(config) : null;
 
     return NextResponse.json({
       config: toPublicOpenClawConfig(config),

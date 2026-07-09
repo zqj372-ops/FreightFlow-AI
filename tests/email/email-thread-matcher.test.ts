@@ -34,4 +34,29 @@ describe("matchEmailToShipment", () => {
 
     expect(match).toBeNull();
   });
+
+  it("matches replies by thread message id when business identifiers are absent", () => {
+    const match = matchEmailToShipment(
+      {
+        attachments: [],
+        body: "Confirmed, attached.",
+        from: "agent@example.com",
+        inReplyTo: "<booking-request-002@example.com>",
+        receivedAt: "2026-06-10T12:00:00.000Z",
+        references: ["<booking-request-002@example.com>"],
+        subject: "Re: request",
+      },
+      shipments,
+      [
+        {
+          messageIds: ["booking-request-002@example.com"],
+          shipmentId: "SHP-240610-002",
+          subjects: ["Booking request"],
+        },
+      ],
+    );
+
+    expect(match?.shipment.id).toBe("SHP-240610-002");
+    expect(match?.score).toBeGreaterThanOrEqual(8);
+  });
 });

@@ -4,7 +4,7 @@ import type { SoApplyResult, SoExtractionResult, SoFieldKey } from "@/lib/so/so-
 import type { SoValidationResult } from "@/features/freightflow/api-client";
 import { SectionCard } from "@/features/freightflow/shared-ui";
 
-const FIELD_LABELS: Record<SoFieldKey, string> = {
+export const SO_FIELD_LABELS: Record<SoFieldKey, string> = {
   aciCutoff: "ACI Cutoff",
   amsCutoff: "AMS Cutoff",
   bookingAgent: "订舱代理",
@@ -29,7 +29,7 @@ const FIELD_LABELS: Record<SoFieldKey, string> = {
   voyage: "航次",
 };
 
-function confidenceLabel(value: number) {
+export function confidenceLabel(value: number) {
   return `${Math.round(value * 100)}%`;
 }
 
@@ -66,7 +66,7 @@ export function SoExtractResultPanel({
                 }`}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-[11px] font-medium text-slate-500">{FIELD_LABELS[field.fieldKey]}</p>
+                <p className="text-[11px] font-medium text-slate-500">{SO_FIELD_LABELS[field.fieldKey]}</p>
                   <span
                     className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
                       field.needsReview
@@ -85,7 +85,7 @@ export function SoExtractResultPanel({
           {validation?.missingFields.length ? (
             <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm leading-6 text-amber-800">
               <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>缺少字段：{validation.missingFields.map((key) => FIELD_LABELS[key as SoFieldKey] ?? key).join("、")}</span>
+              <span>缺少字段：{validation.missingFields.map((key) => SO_FIELD_LABELS[key as SoFieldKey] ?? key).join("、")}</span>
             </div>
           ) : (
             <div className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm leading-6 text-emerald-800">
